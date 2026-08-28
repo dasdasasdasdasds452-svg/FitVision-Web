@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useLanguage } from "@/context/LanguageContext";
 
 interface AIAnalysis {
     severity: string;
@@ -14,6 +15,7 @@ interface AIAnalysis {
 
 export default function ErrorReplayPage() {
     const router = useRouter();
+    const { language } = useLanguage();
     const [errorData, setErrorData] = useState<{ url: string; title: string; detail: string; time: string; exercise?: string } | null>(null);
     const [hasChecked, setHasChecked] = useState(false);
     const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null);
@@ -26,7 +28,7 @@ export default function ErrorReplayPage() {
             setErrorData(JSON.parse(stored));
         }
         setHasChecked(true);
-    }, []);
+    }, [language]);
 
     // Fetch AI analysis when errorData loads
     const fetchAIAnalysis = useCallback(async (data: typeof errorData) => {
@@ -41,7 +43,7 @@ export default function ErrorReplayPage() {
                     errorTitle: data.title,
                     errorDetail: data.detail,
                     exercise: data.exercise || 'Unknown',
-                    timestamp: data.time,
+                    timestamp: data.time, language: language,
                 }),
             });
             if (!res.ok) throw new Error(`API returned ${res.status}`);
@@ -54,7 +56,7 @@ export default function ErrorReplayPage() {
         } finally {
             setIsAnalyzing(false);
         }
-    }, []);
+    }, [language]);
 
     useEffect(() => {
         if (errorData) {
@@ -310,3 +312,5 @@ export default function ErrorReplayPage() {
         </DashboardLayout>
     );
 }
+
+

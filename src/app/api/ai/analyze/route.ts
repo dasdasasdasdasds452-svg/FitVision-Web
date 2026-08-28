@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     // ── Input validation ────────────────────────────────────────────────────
     try {
         const body = await request.json();
-        const { errorTitle, errorDetail, exercise, timestamp } = body;
+        const { errorTitle, errorDetail, exercise, timestamp, language } = body;
 
         if (!errorTitle || typeof errorTitle !== "string") {
             return NextResponse.json({ error: "Missing errorTitle" }, { status: 400 });
@@ -55,7 +55,9 @@ Format your response as JSON with this structure:
   ],
   "trainerNote": "A personalized coaching note (1-2 sentences)",
   "warmupTip": "A specific warm-up exercise to prevent this issue"
-}`;
+}
+
+IMPORTANT: You MUST write your entire response (all JSON values) in ${language === "th" ? "Thai" : "English"}.`;
 
         const userPrompt = `Analyze this exercise form error:
 - Exercise: ${exercise || "Unknown"}
