@@ -337,7 +337,12 @@ export const en = {
         createAccount: "Create Account",
         privacyPolicy: "Privacy Policy",
         termsOfService: "Terms of Service",
-        support: "Support"
+        support: "Support",
+        alreadyHaveAccount: "Already have an account?",
+        signInToggle: "Sign In",
+        processing: "PROCESSING...",
+        signUp: "SIGN UP",
+        signUpSuccess: "Sign up successful! You can now log in."
     },
     notifications: {
         title: "Notifications",

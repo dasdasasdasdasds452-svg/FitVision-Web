@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
-import anime from "animejs";
 import { useLanguage } from "@/context/LanguageContext";
 
 export default function Home() {
@@ -21,14 +20,7 @@ export default function Home() {
     setHistory(stored);
 
     // Staggered Entrance Animations with Anime.js
-    anime({
-      targets: '.animate-fade-up',
-      opacity: [0, 1],
-      translateY: [30, 0],
-      duration: 800,
-      easing: 'easeOutExpo',
-      delay: anime.stagger(150, { start: 100 })
-    });
+    
 
     // Athlete Text Animation removed as per user request
 
@@ -36,23 +28,7 @@ export default function Home() {
     const finalAccuracy = stored.length > 0 ? Math.round(stored.reduce((acc: any, curr: any) => acc + curr.avgScore, 0) / stored.length) : 0;
     const counter = { accuracy: 0 };
 
-    anime({
-      targets: counter,
-      accuracy: finalAccuracy,
-      // Removed round: 1 so the float value allows the bar to grow smoothly without stutter
-      easing: 'easeOutExpo',
-      duration: 2500, // 2.5 seconds
-      delay: 400, // Start after staggered entry begins
-      update: function () {
-        if (accuracyRef.current) {
-          accuracyRef.current.innerHTML = `${Math.round(counter.accuracy)}%`;
-        }
-        if (progressBarRef.current) {
-          // Use the precise fractional percentage point for the smoothest width resize
-          progressBarRef.current.style.width = `${counter.accuracy}%`;
-        }
-      }
-    });
+    
 
   }, []);
 
@@ -61,7 +37,7 @@ export default function Home() {
       <DashboardLayout>
         <div className="px-5 md:px-10 max-w-7xl mx-auto">
           {/* Premium Page Header */}
-          <div className="mb-10 mt-2 flex flex-col gap-2 animate-fade-up opacity-0 text-white">
+          <div className="mb-10 mt-2 flex flex-col gap-2 animate-fade-up text-white">
             <h1 className="text-3xl md:text-5xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400 flex items-center gap-3">
               {t.dashboard.greeting}
               <span className="text-primary drop-shadow-[0_0_12px_rgba(57,255,20,0.4)] whitespace-nowrap">
@@ -76,7 +52,7 @@ export default function Home() {
           </div>
 
           {/* Exercise Selection Overlay Config */}
-          <div className="mb-8 flex gap-2 p-1.5 rounded-2xl bg-surface-dark/60 backdrop-blur-md w-fit border border-white/10 overflow-x-auto max-w-full shadow-lg animate-fade-up opacity-0">
+          <div className="mb-8 flex gap-2 p-1.5 rounded-2xl bg-surface-dark/60 backdrop-blur-md w-fit border border-white/10 overflow-x-auto max-w-full shadow-lg animate-fade-up">
             <button
               onClick={() => setExercise("Bench Press")}
               className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${exercise === "Bench Press" ? "bg-primary text-black shadow-[0_0_15px_rgba(57,255,20,0.4)] scale-105" : "text-slate-300 hover:text-white hover:bg-white/10"
@@ -101,7 +77,7 @@ export default function Home() {
           </div>
 
           {/* Main Action Card */}
-          <div className="relative w-full rounded-2xl overflow-hidden bg-surface-dark border border-primary/30 shadow-neon group transition-all mb-8 animate-fade-up opacity-0">
+          <div className="relative w-full rounded-2xl overflow-hidden bg-surface-dark border border-primary/30 shadow-neon group transition-all mb-8 animate-fade-up">
             {/* Background Image with Overlay */}
             <div
               className="absolute inset-0 bg-cover bg-center opacity-40 group-hover:opacity-50 transition-opacity duration-500"
@@ -167,15 +143,15 @@ export default function Home() {
           {/* Stats & Recent Scans Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left Column: Weekly Stats */}
-            <div className="lg:col-span-1 flex flex-col gap-6 animate-fade-up opacity-0">
+            <div className="lg:col-span-1 flex flex-col gap-6 animate-fade-up">
               <div className="bg-surface-dark border border-white/5 rounded-2xl p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-bold text-white">{t.dashboard.stats.formAccuracy}</h3>
                   <span className="text-primary text-sm font-mono bg-primary/10 px-2 py-1 rounded">+2.4%</span>
                 </div>
                 <div className="flex items-end gap-2 mb-2">
-                  <span ref={accuracyRef} className="text-4xl font-bold text-white">
-                    0%
+                  <span className="text-4xl font-bold text-white">
+                    {history.length > 0 ? Math.round(history.reduce((sum, s) => sum + (s.avgScore || 0), 0) / history.length) : 0}%
                   </span>
                   <span className="text-slate-400 mb-1">{t.dashboard.stats.avgScore}</span>
                 </div>
@@ -206,7 +182,7 @@ export default function Home() {
             </div>
 
             {/* Right Column: Recent Scans List */}
-            <div className="lg:col-span-2 animate-fade-up opacity-0">
+            <div className="lg:col-span-2 animate-fade-up">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xl font-bold text-white">{t.dashboard.stats.recentScans}</h3>
                 <Link href="/history" className="text-sm text-slate-400 hover:text-white transition-colors">
@@ -218,7 +194,7 @@ export default function Home() {
                 {history.length === 0 ? (
                   <div className="text-slate-400 p-4 border border-white/5 rounded-xl text-center">{t.dashboard.stats.noSessions}</div>
                 ) : history.slice(0, 3).map((session, i) => (
-                  <Link href="/history/detail" key={session.id || i} className="group flex items-center justify-between p-4 bg-surface-dark hover:bg-white/5 border border-white/5 hover:border-primary/30 rounded-xl transition-all cursor-pointer">
+                  <button onClick={() => { sessionStorage.setItem('fitvision_history_detail_data', JSON.stringify(session)); window.location.href = '/history/detail'; }} key={session.id || i} className="group flex items-center justify-between p-4 bg-surface-dark hover:bg-white/5 border border-white/5 hover:border-primary/30 rounded-xl transition-all cursor-pointer w-full text-left">
                     <div className="flex items-center gap-4">
                       <div className="size-12 rounded-lg bg-surface-darker flex items-center justify-center border border-white/10 group-hover:border-primary/50 text-white group-hover:text-primary transition-colors">
                         <span className="material-symbols-outlined">
@@ -244,7 +220,7 @@ export default function Home() {
                       <span className={`font-mono text-lg font-bold ${session.avgScore > 90 ? 'text-primary' : 'text-white'}`}>{session.avgScore}%</span>
                       <span className="text-xs text-slate-500">{t.dashboard.stats.accuracy}</span>
                     </div>
-                  </Link>
+                  </button>
                 ))}
               </div>
             </div>

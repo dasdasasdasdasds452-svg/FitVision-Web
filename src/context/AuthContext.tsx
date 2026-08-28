@@ -2,47 +2,81 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
+import type { User } from "@supabase/supabase-js";
 
 interface AuthContextType {
     isLoggedIn: boolean;
-    login: () => void;
-    logout: () => void;
+    user: User | null;
+    logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [user, setUser] = useState<User | null>(null);
     const [isReady, setIsReady] = useState(false);
     const router = useRouter();
     const pathname = usePathname();
 
     useEffect(() => {
-        // Check local storage on mount
-        const storedStatus = localStorage.getItem("fitvision_is_logged_in");
-        if (storedStatus === "true") {
-            setIsLoggedIn(true);
-            setIsReady(true);
-        } else {
-            // If not logged in and not already on the login page or tutorial page, redirect
-            if (pathname !== "/login" && pathname !== "/tutorial") {
-                router.push("/login");
-            } else {
+        // Initial session check
+        const checkSession = async () => {
+            try {
+                const { data: { session }, error } = await supabase.auth.getSession();
+                
+                if (error) {
+                    console.error("Auth session error:", error);
+                }
+
+                if (session?.user) {
+                    setIsLoggedIn(true);
+                    setUser(session.user);
+                } else {
+                    setIsLoggedIn(false);
+                    setUser(null);
+                    // Redirect logic
+                    if (pathname !== "/login" && pathname !== "/tutorial") {
+                        router.push("/login");
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to get session", err);
+            } finally {
                 setIsReady(true);
             }
-        }
+        };
+
+        checkSession();
+
+        // Listen for auth state changes (login, logout)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (session?.user) {
+                setIsLoggedIn(true);
+                setUser(session.user);
+                // If they just logged in and are on the login page, redirect them
+                if (event === 'SIGNED_IN' && pathname === "/login") {
+                    router.push("/");
+                }
+            } else {
+                setIsLoggedIn(false);
+                setUser(null);
+                if (pathname !== "/login" && pathname !== "/tutorial") {
+                    router.push("/login");
+                }
+            }
+        });
+
+        return () => {
+            subscription.unsubscribe();
+        };
     }, [pathname, router]);
 
-    const login = () => {
-        localStorage.setItem("fitvision_is_logged_in", "true");
-        setIsLoggedIn(true);
-        router.push("/"); // Redirect to dashboard after login
-    };
-
-    const logout = () => {
-        localStorage.removeItem("fitvision_is_logged_in");
+    const logout = async () => {
+        await supabase.auth.signOut();
         setIsLoggedIn(false);
-        // Clear other data on logout if needed
+        setUser(null);
         sessionStorage.clear();
         router.push("/login");
     };
@@ -53,7 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     return (
-        <AuthContext.Provider value={{ isLoggedIn, login, logout }}>
+        <AuthContext.Provider value={{ isLoggedIn, user, logout }}>
             {children}
         </AuthContext.Provider>
     );

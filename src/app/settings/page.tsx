@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import anime from "animejs";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useLanguage } from "@/context/LanguageContext";
 
@@ -33,14 +32,7 @@ export default function SettingsPage() {
         if (storedWeight) setWeight(storedWeight);
 
         // Entrance animation
-        anime({
-            targets: '.animate-slide-up',
-            opacity: [0, 1],
-            translateY: [20, 0],
-            duration: 600,
-            easing: 'easeOutExpo',
-            delay: anime.stagger(100, { start: 100 })
-        });
+        
     }, []);
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -75,7 +67,7 @@ export default function SettingsPage() {
                 <main className="flex-1 w-full p-6 lg:p-10">
                     <div className="max-w-4xl mx-auto space-y-10">
                         {/* Title Section */}
-                        <div className="flex flex-col gap-2 animate-slide-up opacity-0">
+                        <div className="flex flex-col gap-2 animate-slide-up">
                             <h1 className="text-slate-100 text-4xl font-black leading-tight tracking-tight uppercase italic flex items-center gap-4">
                                 {t.settings.title} <span className="text-primary text-xl material-symbols-outlined">settings_accessibility</span>
                             </h1>
@@ -85,7 +77,7 @@ export default function SettingsPage() {
                         </div>
 
                         {/* Profile Section */}
-                        <section className="glass rounded-2xl p-8 space-y-8 animate-slide-up opacity-0">
+                        <section className="glass rounded-2xl p-8 space-y-8 animate-slide-up">
                             <div className="flex items-center gap-6 border-b border-primary/10 pb-6">
                                 <input
                                     type="file"
@@ -99,7 +91,7 @@ export default function SettingsPage() {
                                         title="User avatar"
                                         style={{ backgroundImage: `url('${profileImage}')` }}>
                                     </div>
-                                    <div className="absolute inset-0 bg-[#12230f]/60 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                    <div className="absolute inset-0 bg-[#12230f]/60 rounded-full group-hover:opacity-100 flex items-center justify-center transition-opacity">
                                         <span className="material-symbols-outlined text-primary">edit</span>
                                     </div>
                                 </div>
@@ -148,7 +140,7 @@ export default function SettingsPage() {
                         </section>
 
                         {/* AI Preferences Section */}
-                        <section className="space-y-6 animate-slide-up opacity-0">
+                        <section className="space-y-6 animate-slide-up">
                             <div className="flex items-center gap-3">
                                 <span className="material-symbols-outlined text-primary">psychology</span>
                                 <h2 className="text-slate-100 text-xl font-black uppercase italic">{t.settings.aiPreferences.title}</h2>
@@ -191,7 +183,7 @@ export default function SettingsPage() {
                         </section>
 
                         {/* Bottom Action Buttons */}
-                        <div className="flex items-center gap-4 pt-6 animate-slide-up opacity-0 relative">
+                        <div className="flex items-center gap-4 pt-6 animate-slide-up relative">
                             <button
                                 onClick={handleSaveChanges}
                                 className="flex-1 md:flex-none md:w-48 bg-primary hover:shadow-[0_0_20px_#3cf91a55] text-[#12230f] px-8 py-4 rounded-xl font-black uppercase tracking-widest transition-all text-sm active:scale-95">

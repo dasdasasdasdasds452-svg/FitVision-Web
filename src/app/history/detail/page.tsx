@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import anime from "animejs";
 import DashboardLayout from "@/components/DashboardLayout";
 
 interface AIAnalysis {
@@ -60,14 +59,7 @@ export default function ErrorReplayPage() {
     useEffect(() => {
         if (errorData) {
             fetchAIAnalysis(errorData);
-            anime({
-                targets: '.animate-stagger-replay',
-                opacity: [0, 1],
-                translateY: [20, 0],
-                duration: 800,
-                easing: 'easeOutExpo',
-                delay: anime.stagger(100, { start: 100 })
-            });
+            
         }
     }, [errorData, fetchAIAnalysis]);
 
@@ -117,7 +109,7 @@ export default function ErrorReplayPage() {
             <div className="flex-1 max-w-5xl mx-auto w-full px-5 py-6 md:px-10 pb-24">
 
                 {/* Breadcrumb */}
-                <div className="flex items-center gap-2 mb-6 animate-stagger-replay opacity-0">
+                <div className="flex items-center gap-2 mb-6 animate-stagger-replay">
                     <button onClick={() => router.back()} className="flex items-center gap-1.5 text-slate-400 hover:text-primary transition-colors text-sm font-medium group">
                         <span className="material-symbols-outlined text-lg group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
                         Back
@@ -127,7 +119,7 @@ export default function ErrorReplayPage() {
                 </div>
 
                 {/* Video Player */}
-                <div className="animate-stagger-replay opacity-0 mb-6">
+                <div className="animate-stagger-replay mb-6">
                     <div className="bg-surface-dark rounded-2xl overflow-hidden border border-white/5 relative">
                         <div className="absolute top-3 left-3 z-20 flex gap-2">
                             <span className="bg-red-500/90 backdrop-blur-sm text-white text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider flex items-center gap-1 shadow-lg">
@@ -163,7 +155,7 @@ export default function ErrorReplayPage() {
                 </div>
 
                 {/* AI Analysis Panel */}
-                <div className="animate-stagger-replay opacity-0 bg-surface-dark rounded-2xl border border-white/5 overflow-hidden mb-6">
+                <div className="animate-stagger-replay bg-surface-dark rounded-2xl border border-white/5 overflow-hidden mb-6">
                     {/* Header */}
                     <div className="px-5 md:px-6 py-4 border-b border-white/5 bg-red-500/[0.03] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
@@ -256,7 +248,7 @@ export default function ErrorReplayPage() {
                 </div>
 
                 {/* Bottom Row: Warm-up Tip + AI Coach Note */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-stagger-replay opacity-0">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-stagger-replay">
                     {/* Warm-up Suggestion */}
                     <div className="bg-surface-dark rounded-2xl border border-white/5 p-5">
                         <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
@@ -305,7 +297,7 @@ export default function ErrorReplayPage() {
                 </div>
 
                 {/* CTA Button */}
-                <div className="flex justify-center mt-8 animate-stagger-replay opacity-0">
+                <div className="flex justify-center mt-8 animate-stagger-replay">
                     <button
                         onClick={() => router.push('/camera')}
                         className="bg-primary text-black font-bold py-3 px-8 rounded-xl flex items-center gap-2 hover:shadow-[0_0_25px_rgba(57,255,20,0.5)] transition-all active:scale-95"

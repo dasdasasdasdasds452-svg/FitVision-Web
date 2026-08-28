@@ -2,7 +2,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import React, { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import anime from "animejs";
 import { useLanguage } from "@/context/LanguageContext";
 
 export default function HistoryPage() {
@@ -35,14 +34,7 @@ export default function HistoryPage() {
     // Run animation AFTER React has rendered elements (triggered by data/filter changes)
     useEffect(() => {
         requestAnimationFrame(() => {
-            anime({
-                targets: '.animate-stagger-history',
-                opacity: [0, 1],
-                translateY: [20, 0],
-                duration: 800,
-                easing: 'easeOutExpo',
-                delay: anime.stagger(100, { start: 100 })
-            });
+            
         });
     }, [filteredSessions]);
 
@@ -98,7 +90,7 @@ export default function HistoryPage() {
                 <div className="max-w-[1200px] mx-auto p-5 md:p-10 flex flex-col gap-6 pb-24">
 
                     {/* Header */}
-                    <header className="flex flex-col md:flex-row md:items-end justify-between gap-5 animate-stagger-history opacity-0">
+                    <header className="flex flex-col md:flex-row md:items-end justify-between gap-5 animate-stagger-history">
                         <div className="flex flex-col gap-1.5">
                             <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-white flex items-center gap-3">
                                 <span className="material-symbols-outlined text-primary text-3xl md:text-4xl drop-shadow-[0_0_12px_rgba(57,255,20,0.4)]">history</span>
@@ -132,7 +124,7 @@ export default function HistoryPage() {
                             { icon: "repeat", label: t.history.statsCards.totalReps, value: `${stats.totalReps}`, color: "text-blue-400" },
                             { icon: "done_all", label: t.history.statsCards.sessions, value: `${stats.total}`, color: "text-violet-400" },
                         ].map((stat, i) => (
-                            <div key={i} className="animate-stagger-history opacity-0 bg-surface-dark rounded-2xl p-4 md:p-5 border border-white/5 relative overflow-hidden group hover:border-primary/20 transition-all">
+                            <div key={i} className="animate-stagger-history bg-surface-dark rounded-2xl p-4 md:p-5 border border-white/5 relative overflow-hidden group hover:border-primary/20 transition-all">
                                 <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-white/[0.02] to-transparent rounded-bl-2xl pointer-events-none"></div>
                                 <span className={`material-symbols-outlined text-xl md:text-2xl mb-2 block ${stat.color}`}>{stat.icon}</span>
                                 <p className="text-xl md:text-2xl font-bold text-white">{stat.value}</p>
@@ -143,7 +135,7 @@ export default function HistoryPage() {
 
                     {/* Chart Card */}
                     {history.length > 0 && (
-                        <div className="animate-stagger-history opacity-0 bg-surface-dark rounded-2xl p-5 md:p-6 border border-white/5 relative overflow-hidden">
+                        <div className="animate-stagger-history bg-surface-dark rounded-2xl p-5 md:p-6 border border-white/5 relative overflow-hidden">
                             <div className="absolute top-0 right-0 w-48 h-48 bg-primary/5 rounded-full blur-[80px] -mr-24 -mt-24 pointer-events-none"></div>
                             <div className="flex justify-between items-center mb-4 relative z-10">
                                 <div>
@@ -197,7 +189,7 @@ export default function HistoryPage() {
 
                     {/* Session List */}
                     <div className="flex flex-col gap-3">
-                        <h3 className="text-lg font-bold text-white flex items-center gap-2 animate-stagger-history opacity-0">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2 animate-stagger-history">
                             <span className="material-symbols-outlined text-primary text-xl">list_alt</span>
                             {t.history.pastSessions.title}
                             {filteredSessions.length > 0 && (
@@ -206,7 +198,7 @@ export default function HistoryPage() {
                         </h3>
 
                         {filteredSessions.length === 0 ? (
-                            <div className="animate-stagger-history opacity-0 flex flex-col items-center justify-center gap-4 py-16 bg-surface-dark rounded-2xl border border-white/5">
+                            <div className="animate-stagger-history flex flex-col items-center justify-center gap-4 py-16 bg-surface-dark rounded-2xl border border-white/5">
                                 <span className="material-symbols-outlined text-5xl text-slate-700">fitness_center</span>
                                 <p className="text-slate-500 font-medium text-sm">{t.history.pastSessions.empty}</p>
                                 <button
@@ -225,10 +217,10 @@ export default function HistoryPage() {
                                         sessionStorage.setItem('fitvision_errors', JSON.stringify(session.errors || []));
                                         router.push('/summary');
                                     }}
-                                    className="animate-stagger-history opacity-0 group bg-surface-dark hover:bg-white/[0.03] border border-white/5 hover:border-primary/30 rounded-2xl p-4 md:p-5 transition-all cursor-pointer relative overflow-hidden"
+                                    className="animate-stagger-history group bg-surface-dark hover:bg-white/[0.03] border border-white/5 hover:border-primary/30 rounded-2xl p-4 md:p-5 transition-all cursor-pointer relative overflow-hidden"
                                 >
                                     {/* Accent gradient on hover */}
-                                    <div className={`absolute inset-0 bg-gradient-to-r ${getScoreBg(session.avgScore)} opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none`}></div>
+                                    <div className={`absolute inset-0 bg-gradient-to-r ${getScoreBg(session.avgScore)} group-hover:opacity-100 transition-opacity pointer-events-none`}></div>
 
                                     <div className="relative z-10 flex items-center gap-4">
                                         {/* Exercise Icon */}

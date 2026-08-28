@@ -2,8 +2,8 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
-import anime from "animejs";
 import { marked } from "marked";
+import DOMPurify from "dompurify";
 import { useLanguage } from "@/context/LanguageContext";
 
 marked.setOptions({ breaks: true, gfm: true });
@@ -55,25 +55,8 @@ export default function ChatPage() {
     // Run entry animations only when there are no messages (empty state)
     useEffect(() => {
         if (isHistoryLoaded && messages.length === 0) {
-            anime({
-                targets: '.animate-chat-in',
-                opacity: [0, 1],
-                translateY: [30, 0],
-                duration: 800,
-                easing: 'easeOutExpo',
-                delay: anime.stagger(80, { start: 200 })
-            });
-            anime({
-                targets: '.animate-glow-pulse',
-                boxShadow: [
-                    '0 0 20px rgba(57,255,20,0.1)',
-                    '0 0 40px rgba(57,255,20,0.2)',
-                    '0 0 20px rgba(57,255,20,0.1)',
-                ],
-                duration: 3000,
-                easing: 'easeInOutSine',
-                loop: true
-            });
+            
+            
         }
     }, [isHistoryLoaded, messages.length]);
 
@@ -134,7 +117,14 @@ export default function ChatPage() {
         e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
     };
 
-    const renderMarkdown = (text: string): string => marked(text) as string;
+    const renderMarkdown = (text: string): string => {
+        const raw = marked(text) as string;
+        return DOMPurify.sanitize(raw, {
+            ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'b', 'i', 'ul', 'ol', 'li', 'code', 'pre', 'a', 'h1', 'h2', 'h3', 'h4', 'blockquote', 'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
+            ALLOWED_ATTR: ['href', 'target', 'rel', 'class'],
+            ALLOW_DATA_ATTR: false,
+        });
+    };
 
     const formatTime = (ts: number) => {
         const d = new Date(ts);
@@ -209,14 +199,14 @@ export default function ChatPage() {
                     {/* Empty State */}
                     {messages.length === 0 && (
                         <div className="flex flex-col items-center justify-center h-full gap-8">
-                            <div className="animate-chat-in opacity-0 relative">
+                            <div className="animate-chat-in relative">
                                 <div className="animate-glow-pulse w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/30 flex items-center justify-center relative z-10">
                                     <span className="material-symbols-outlined text-primary text-4xl">neurology</span>
                                 </div>
                                 <div className="absolute -inset-3 bg-primary/10 rounded-3xl blur-xl"></div>
                             </div>
 
-                            <div className="text-center animate-chat-in opacity-0">
+                            <div className="text-center animate-chat-in">
                                 <h1 className="text-3xl md:text-4xl font-bold text-white mb-3 tracking-tight">
                                     FitVision <span className="text-primary">{t.chat.title}</span>
                                 </h1>
@@ -225,7 +215,7 @@ export default function ChatPage() {
                                 </p>
                             </div>
 
-                            <div className="flex flex-wrap justify-center gap-2 animate-chat-in opacity-0">
+                            <div className="flex flex-wrap justify-center gap-2 animate-chat-in">
                                 {[t.chat.features.biomechanics, t.chat.features.formAnalysis, t.chat.features.injuryPrevention, t.chat.features.bilingualSupport].map((f, i) => (
                                     <span key={i} className="px-3 py-1 rounded-full border border-white/5 bg-white/[0.02] text-[11px] text-slate-500 font-medium">{f}</span>
                                 ))}
@@ -236,9 +226,9 @@ export default function ChatPage() {
                                     <button
                                         key={i}
                                         onClick={() => sendMessage(q.text)}
-                                        className="animate-chat-in opacity-0 flex items-start gap-3 p-4 rounded-2xl border border-white/5 bg-surface-dark hover:bg-white/[0.04] hover:border-primary/30 transition-all text-left group relative overflow-hidden"
+                                        className="animate-chat-in flex items-start gap-3 p-4 rounded-2xl border border-white/5 bg-surface-dark hover:bg-white/[0.04] hover:border-primary/30 transition-all text-left group relative overflow-hidden"
                                     >
-                                        <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+                                        <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.03] to-transparent group-hover:opacity-100 transition-opacity pointer-events-none"></div>
                                         <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/15 flex items-center justify-center shrink-0 group-hover:scale-110 group-hover:bg-primary/20 transition-all relative z-10">
                                             <span className="material-symbols-outlined text-primary text-lg">{q.icon}</span>
                                         </div>

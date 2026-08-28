@@ -5,14 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import { useLanguage } from "@/context/LanguageContext";
-
-// --- Helper Functions ---
-function calculateAngle(a: any, b: any, c: any) {
-    const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
-    let angle = Math.abs((radians * 180.0) / Math.PI);
-    if (angle > 180.0) angle = 360.0 - angle;
-    return angle || 0;
-}
+import { CameraMobileHUD, CameraDesktopPanel } from "@/components/camera/CameraOverlays";
+import { calculateAngle, Landmark } from "@/lib/poseUtils";
 
 function CameraContent() {
     const searchParams = useSearchParams();
@@ -68,7 +62,7 @@ function CameraContent() {
 
     // Ping Render backend until it wakes up
     useEffect(() => {
-        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://fitvision-backend-production-d268.up.railway.app";
+        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://grubby-lynnett-tonkla1-ded4b5e9.koyeb.app";
         let attempts = 0;
         let stopped = false;
 
@@ -248,20 +242,22 @@ function CameraContent() {
                     const lm = results.poseLandmarks;
                     const exercise = exerciseRef.current;
                     const features = [
-                        calculateAngle(lm[11], lm[13], lm[15]),
-                        calculateAngle(lm[12], lm[14], lm[16]),
-                        calculateAngle(lm[23], lm[11], lm[13]),
-                        calculateAngle(lm[24], lm[12], lm[14]),
-                        calculateAngle(lm[11], lm[23], lm[25]),
-                        calculateAngle(lm[12], lm[24], lm[26]),
-                        calculateAngle(lm[23], lm[25], lm[27]),
-                        calculateAngle(lm[24], lm[26], lm[28]),
-                        Math.abs(lm[11].x - lm[12].x),
-                        Math.abs(lm[23].x - lm[24].x),
-                        Math.abs((lm[11].y + lm[12].y) / 2 - (lm[23].y + lm[24].y) / 2),
-                        Math.abs(lm[13].y - lm[14].y) < 0.05 ? 1 : 0,
-                        Math.abs(lm[25].y - lm[26].y) < 0.05 ? 1 : 0
+                        calculateAngle(lm[11], lm[13], lm[15]),  // [0] left_elbow_angle
+                        calculateAngle(lm[12], lm[14], lm[16]),  // [1] right_elbow_angle
+                        calculateAngle(lm[23], lm[11], lm[13]),  // [2] left_shoulder_angle
+                        calculateAngle(lm[24], lm[12], lm[14]),  // [3] right_shoulder_angle
+                        calculateAngle(lm[11], lm[23], lm[25]),  // [4] left_hip_angle
+                        calculateAngle(lm[12], lm[24], lm[26]),  // [5] right_hip_angle
+                        calculateAngle(lm[23], lm[25], lm[27]),  // [6] left_knee_angle
+                        calculateAngle(lm[24], lm[26], lm[28]),  // [7] right_knee_angle
+                        Math.abs(lm[11].x - lm[12].x),           // [8] shoulder_width
+                        Math.abs(lm[23].x - lm[24].x),           // [9] hip_width
+                        Math.abs((lm[11].y + lm[12].y) / 2 - (lm[23].y + lm[24].y) / 2), // [10] torso_length
                     ];
+                    // Compute symmetry from angles already calculated above
+                    const elbow_symmetry = Math.abs(features[0] - features[1]);  // [11]
+                    const knee_symmetry = Math.abs(features[6] - features[7]);   // [12]
+                    features.push(elbow_symmetry, knee_symmetry);
 
                     if (isTrackingStartedRef.current) {
                         let mainAngle = 0;
@@ -277,11 +273,12 @@ function CameraContent() {
                             upThreshold = 165;
                             downThreshold = 120;
                         } else if (exercise === "benchpress") {
-                            const distLeft = Math.hypot(lm[11].x - lm[15].x, lm[11].y - lm[15].y);
-                            const distRight = Math.hypot(lm[12].x - lm[16].x, lm[12].y - lm[16].y);
-                            mainAngle = Math.max(distLeft, distRight) * 1000;
-                            upThreshold = 80;
-                            downThreshold = 63;
+                            // Use elbow angle (shoulder-elbow-wrist) for scale-invariant rep counting
+                            const leftElbowAngle = calculateAngle(lm[11], lm[13], lm[15]);
+                            const rightElbowAngle = calculateAngle(lm[12], lm[14], lm[16]);
+                            mainAngle = (leftElbowAngle + rightElbowAngle) / 2;
+                            upThreshold = 155;
+                            downThreshold = 95;
                         }
 
                         if (debugAngleRef.current) {
@@ -302,7 +299,7 @@ function CameraContent() {
                     if (frameCount % 5 === 0 && !isPredicting && isTrackingStartedRef.current) {
                         isPredicting = true;
 
-                        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://fitvision-backend-production-d268.up.railway.app";
+                        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://grubby-lynnett-tonkla1-ded4b5e9.koyeb.app";
 
                         (async () => {
                             try {
@@ -366,14 +363,13 @@ function CameraContent() {
                                         const correctPreds = window.filter(p => p.correct);
                                         const avgConf = correctPreds.length > 0 ? correctPreds.reduce((s, p) => s + p.confidence, 0) / correctPreds.length : 0.8;
                                         rawScore = avgConf * 100;
-                                        if (rawScore > 98) rawScore = 95 + Math.random() * 4;
-                                        if (rawScore < 70) rawScore = 70 + Math.random() * 10;
+                                        if (rawScore > 98) rawScore = 98;
+                                        if (rawScore < 70) rawScore = 70;
                                     } else {
                                         const badPreds = window.filter(p => !p.correct);
                                         const avgConf = badPreds.length > 0 ? badPreds.reduce((s, p) => s + p.confidence, 0) / badPreds.length : 0.5;
                                         rawScore = (1 - avgConf) * 100;
                                         rawScore = Math.max(15, Math.min(55, rawScore));
-                                        rawScore += (Math.random() * 6 - 3);
                                     }
                                     const currentScore = Math.round(Math.max(0, Math.min(100, rawScore)));
                                     console.log('[FV] Score Update:', { isFormCorrect, incorrectCount, windowSize: window.length, currentScore });
@@ -485,7 +481,7 @@ function CameraContent() {
         };
     }, [areScriptsLoaded, facingMode]);
 
-    const endWorkoutData = () => {
+    const endWorkoutData = async () => {
         const scores = statsRef.current.scores;
         const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 100;
         const errors = JSON.parse(sessionStorage.getItem('fitvision_errors') || '[]');
@@ -503,10 +499,28 @@ function CameraContent() {
 
         sessionStorage.setItem('fitvision_session_stats', JSON.stringify(sessionPayload));
 
+        // Save to local storage as fallback
         const history = JSON.parse(localStorage.getItem('fitvision_history') || '[]');
         history.unshift(sessionPayload);
         if (history.length > 50) history.pop();
         localStorage.setItem('fitvision_history', JSON.stringify(history));
+
+        // Save to Supabase
+        try {
+            const { supabase } = await import('@/lib/supabaseClient');
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) {
+                await supabase.from('workout_history').insert({
+                    user_id: session.user.id,
+                    exercise_type: statsRef.current.exerciseName,
+                    reps: currentReps,
+                    average_confidence: avgScore
+                });
+                console.log("[FV] Saved workout to Supabase.");
+            }
+        } catch (e) {
+            console.error("Failed to save workout to Supabase", e);
+        }
     };
 
     return (
@@ -529,10 +543,12 @@ function CameraContent() {
                         style={{ transform: facingMode === "user" ? "scaleX(-1)" : "scaleX(1)" }}
                     />
 
-                    {/* Debug Display */}
+                    {/* Debug Display — dev only */}
+                    {process.env.NODE_ENV === "development" && (
                     <div ref={debugAngleRef} className="absolute top-20 left-4 z-50 bg-black/70 text-primary font-mono p-2 rounded text-sm pointer-events-none border border-primary/30">
                         Angle: 0 | State: up
                     </div>
+                    )}
 
                     {/* Top Bar */}
                     <header className="relative z-30 flex items-center justify-between p-3 md:p-4">
@@ -692,83 +708,16 @@ function CameraContent() {
                         </div>
                     )}
 
-
-                    {/* ── Mobile Bottom HUD ── */}
-                    {isTrackingStarted && (
-                        <div className="lg:hidden relative z-20 mt-auto p-3 pb-4">
-                            <div className="bg-black/75 backdrop-blur-xl rounded-2xl border border-white/10 p-3 shadow-xl">
-                                <div className="flex items-center gap-3">
-                                    <div className={`shrink-0 w-16 h-16 rounded-2xl flex flex-col items-center justify-center ${isGoodForm ? "bg-primary/15 border border-primary/30" : "bg-red-500/15 border border-red-500/30"}`}>
-                                        <span className={`text-2xl font-black leading-none ${isGoodForm ? "text-primary" : "text-red-400"}`}>{formScore}<span className="text-[10px]">%</span></span>
-                                        <span className={`text-[8px] uppercase tracking-wider font-bold ${isGoodForm ? "text-primary/70" : "text-red-400/70"}`}>{t.camera.form}</span>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-1.5 mb-0.5">
-                                            <span className={`material-symbols-outlined text-base ${isGoodForm ? "text-primary" : "text-red-400"}`}>{isGoodForm ? "check_circle" : "warning"}</span>
-                                            <span className={`font-bold text-sm truncate ${isGoodForm ? "text-primary" : "text-red-300"}`}>{feedbackTitle}</span>
-                                        </div>
-                                        <p className={`text-xs leading-tight line-clamp-2 ${isGoodForm ? "text-white/60" : "text-red-200/80"}`}>{feedbackDetail}</p>
-                                    </div>
-                                    <div className="shrink-0 text-center">
-                                        <span className="text-blue-400 font-black text-2xl leading-none">{currentReps}</span>
-                                        <span className="text-white/40 text-xs font-medium">/{repGoal}</span>
-                                        <div className="text-[8px] text-white/40 uppercase tracking-wider font-bold">{t.camera.reps}</div>
-                                    </div>
-                                </div>
-                                <Link href="/summary" onClick={endWorkoutData}
-                                    className="mt-3 w-full h-12 bg-red-600/90 hover:bg-red-500 active:scale-[0.98] transition-all rounded-xl text-white font-bold text-sm shadow-lg border border-red-500/40 flex items-center justify-center gap-2 cursor-pointer">
-                                    <span className="material-symbols-outlined text-lg">stop_circle</span>{t.camera.endWorkout}
-                                </Link>
-                            </div>
-                        </div>
-                    )}
+                    <CameraMobileHUD props={{
+                        t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, 
+                        currentReps, repGoal, exerciseName, endWorkoutData
+                    }} />
                 </div>
 
-                {/* ── Desktop Side Panel ── */}
-                {isTrackingStarted && (
-                    <aside className="hidden lg:flex flex-col w-80 xl:w-96 bg-[#0a0a0a] border-l border-white/5 p-5 xl:p-6 gap-5 overflow-y-auto">
-                        <div className="flex items-center gap-3 bg-white/5 rounded-2xl p-4 border border-white/5">
-                            <span className="material-symbols-outlined text-primary text-3xl">fitness_center</span>
-                            <div>
-                                <h3 className="text-white font-bold text-lg leading-tight">{exerciseName}</h3>
-                                <p className="text-white/40 text-xs">{t.camera.aiPowered}</p>
-                            </div>
-                        </div>
-
-                        <div className={`rounded-2xl p-5 border text-center ${isGoodForm ? "bg-primary/10 border-primary/20" : "bg-red-500/10 border-red-500/20"}`}>
-                            <span className={`text-[10px] uppercase tracking-[0.2em] font-bold ${isGoodForm ? "text-primary/60" : "text-red-400/60"}`}>{t.camera.formScore}</span>
-                            <div className={`text-6xl font-black leading-none mt-1 ${isGoodForm ? "text-primary" : "text-red-400"}`}>{formScore}<span className="text-xl">%</span></div>
-                        </div>
-
-                        <div className={`flex items-start gap-3 rounded-2xl p-4 border ${isGoodForm ? "bg-primary/5 border-primary/20" : "bg-red-500/5 border-red-500/20"}`}>
-                            <span className={`material-symbols-outlined text-2xl shrink-0 mt-0.5 ${isGoodForm ? "text-primary" : "text-red-400"}`}>{isGoodForm ? "check_circle" : "warning"}</span>
-                            <div className="min-w-0">
-                                <p className={`font-bold text-sm ${isGoodForm ? "text-primary" : "text-red-300"}`}>{feedbackTitle}</p>
-                                <p className={`text-xs mt-1 leading-relaxed ${isGoodForm ? "text-white/50" : "text-red-200/70"}`}>{feedbackDetail}</p>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="bg-white/5 rounded-2xl p-4 border border-white/5 text-center">
-                                <span className={`material-symbols-outlined text-xl ${isGoodForm ? "text-primary" : "text-orange-400"}`}>health_and_safety</span>
-                                <p className="text-white font-bold text-sm mt-1">{isGoodForm ? t.camera.lowRisk : t.camera.highRisk}</p>
-                                <p className="text-white/30 text-[10px] uppercase tracking-wider mt-0.5">{t.camera.injuryRisk}</p>
-                            </div>
-                            <div className="bg-white/5 rounded-2xl p-4 border border-white/5 text-center">
-                                <span className="material-symbols-outlined text-xl text-blue-400">repeat</span>
-                                <p className="text-white font-bold text-sm mt-1"><span className="text-blue-400 text-xl font-black">{currentReps}</span> / {repGoal}</p>
-                                <p className="text-white/30 text-[10px] uppercase tracking-wider mt-0.5">{t.camera.repetitions}</p>
-                            </div>
-                        </div>
-
-                        <div className="mt-auto">
-                            <Link href="/summary" onClick={endWorkoutData}
-                                className="w-full h-14 bg-red-600/90 hover:bg-red-500 active:scale-[0.98] transition-all rounded-2xl text-white font-black text-base shadow-lg border border-red-500/40 flex items-center justify-center gap-3 cursor-pointer">
-                                <span className="material-symbols-outlined text-2xl">stop_circle</span>{t.camera.endWorkout}
-                            </Link>
-                        </div>
-                    </aside>
-                )}
+                <CameraDesktopPanel props={{
+                        t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, 
+                        currentReps, repGoal, exerciseName, endWorkoutData
+                    }} />
             </div>
         </div>
     );

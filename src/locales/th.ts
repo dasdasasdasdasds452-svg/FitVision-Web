@@ -337,7 +337,12 @@ export const th = {
         createAccount: "สร้างบัญชี",
         privacyPolicy: "นโยบายความเป็นส่วนตัว",
         termsOfService: "ข้อกำหนดการใช้งาน",
-        support: "ช่วยเหลือ"
+        support: "ช่วยเหลือ",
+        alreadyHaveAccount: "มีบัญชีอยู่แล้ว?",
+        signInToggle: "เข้าสู่ระบบ",
+        processing: "กำลังประมวลผล...",
+        signUp: "สมัครสมาชิก",
+        signUpSuccess: "สมัครสมาชิกสำเร็จ! คุณสามารถเข้าสู่ระบบได้แล้ว"
     },
     notifications: {
         title: "การแจ้งเตือน",

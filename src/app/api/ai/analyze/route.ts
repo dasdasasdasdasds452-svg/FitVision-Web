@@ -1,19 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { checkRateLimit } from "@/lib/apiHelpers";
+
+const MAX_INPUT_LENGTH = 2000;
 
 export async function POST(request: NextRequest) {
-    try {
-        const client = new OpenAI({
-            apiKey: process.env.AI_API_KEY,
-            baseURL: process.env.AI_BASE_URL,
-        });
+    const { success, response, limiter } = await checkRateLimit(request, 10, 60_000);
+    if (!success) {
+        return response;
+    }
+    // ── Rate Limiting (done via checkRateLimit) ──────────────────────────────────
 
+    // ── Input validation ────────────────────────────────────────────────────
+    try {
         const body = await request.json();
         const { errorTitle, errorDetail, exercise, timestamp } = body;
 
-        if (!errorTitle) {
-            return NextResponse.json({ error: "Missing error data" }, { status: 400 });
+        if (!errorTitle || typeof errorTitle !== "string") {
+            return NextResponse.json({ error: "Missing errorTitle" }, { status: 400 });
         }
+        if (errorTitle.length > MAX_INPUT_LENGTH) {
+            return NextResponse.json(
+                { error: `errorTitle too long (max ${MAX_INPUT_LENGTH} chars)` },
+                { status: 400 }
+            );
+        }
+        if (errorDetail && typeof errorDetail === "string" && errorDetail.length > MAX_INPUT_LENGTH) {
+            return NextResponse.json(
+                { error: `errorDetail too long (max ${MAX_INPUT_LENGTH} chars)` },
+                { status: 400 }
+            );
+        }
+
+        // ── AI call ─────────────────────────────────────────────────────────
+        const openai = new OpenAI({
+            apiKey: process.env.AI_API_KEY,
+            baseURL: process.env.AI_BASE_URL,
+        });
 
         const systemPrompt = `You are FitVision AI Coach — a world-class biomechanics and fitness expert. You analyze exercise form errors detected by AI pose estimation.
 
@@ -42,7 +65,7 @@ Format your response as JSON with this structure:
 
 Provide corrective feedback as JSON.`;
 
-        const response = await client.chat.completions.create({
+        const response = await openai.chat.completions.create({
             model: process.env.AI_MODEL || "gemini-2.5-flash-lite",
             messages: [
                 { role: "system", content: systemPrompt },
@@ -73,11 +96,18 @@ Provide corrective feedback as JSON.`;
             };
         }
 
-        return NextResponse.json(parsed);
-    } catch (error: any) {
-        console.error("AI API Error:", error?.message || error);
+        return NextResponse.json(parsed, {
+            headers: {
+                "X-RateLimit-Remaining": String(limiter?.remaining || 0),
+            },
+        });
+    } catch (error: unknown) {
+        console.error(
+            "AI API Error:",
+            error instanceof Error ? error.message : error
+        );
         return NextResponse.json(
-            { error: "AI analysis failed", detail: error?.message },
+            { error: "AI analysis failed. Please try again." },
             { status: 500 }
         );
     }

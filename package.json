@@ -12,11 +12,16 @@
     "@mediapipe/camera_utils": "^0.3.1675466862",
     "@mediapipe/drawing_utils": "^0.3.1675466124",
     "@mediapipe/pose": "^0.5.1675469404",
+    "@supabase/supabase-js": "^2.110.8",
     "@types/animejs": "^3.1.12",
+    "@types/dompurify": "^3.0.5",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.38.0",
     "animejs": "^3.2.2",
+    "dompurify": "^3.4.12",
     "framer-motion": "^12.34.3",
     "marked": "^17.0.4",
-    "next": "16.1.6",
+    "next": "^16.2.10",
     "openai": "^6.25.0",
     "react": "19.2.3",
     "react-dom": "19.2.3"
@@ -30,5 +35,8 @@
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
   }
 }

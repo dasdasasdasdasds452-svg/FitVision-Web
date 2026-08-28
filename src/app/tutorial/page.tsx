@@ -3,7 +3,6 @@
 import React, { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import anime from "animejs";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useLanguage } from "@/context/LanguageContext";
 
@@ -13,14 +12,7 @@ export default function TutorialPage() {
 
     useEffect(() => {
         // Staggered fade in animation
-        anime({
-            targets: '.animate-stagger-tutorial',
-            opacity: [0, 1],
-            translateY: [20, 0],
-            duration: 800,
-            easing: 'easeOutExpo',
-            delay: anime.stagger(150, { start: 100 })
-        });
+        
     }, []);
 
     const handleLaunchCamera = () => {
@@ -36,7 +28,7 @@ export default function TutorialPage() {
 
                 <main className="max-w-6xl mx-auto px-6 py-12 w-full">
                     {/* Hero Section */}
-                    <div className="mb-16 text-center md:text-left animate-stagger-tutorial opacity-0">
+                    <div className="mb-16 text-center md:text-left animate-stagger-tutorial">
                         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-bold uppercase tracking-widest mb-4">
                             <span className="relative flex h-2 w-2">
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
@@ -53,7 +45,7 @@ export default function TutorialPage() {
                     </div>
 
                     {/* Step-by-Step Horizontal Timeline */}
-                    <div className="relative mb-20 animate-stagger-tutorial opacity-0">
+                    <div className="relative mb-20 animate-stagger-tutorial">
                         <div className="absolute top-1/2 left-0 w-full h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent -translate-y-1/2 hidden md:block"></div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
                             {/* Step 1 */}
@@ -90,7 +82,7 @@ export default function TutorialPage() {
                     </div>
 
                     {/* What FitVision AI Can Do */}
-                    <div className="mb-20 animate-stagger-tutorial opacity-0">
+                    <div className="mb-20 animate-stagger-tutorial">
                         <h2 className="text-white text-2xl font-bold mb-8 flex items-center gap-3">
                             <span className="material-symbols-outlined text-primary">fitness_center</span>
                             {t.tutorial.capabilities.title}
@@ -155,7 +147,7 @@ export default function TutorialPage() {
                     </div>
 
                     {/* Visual Comparison Grid */}
-                    <div className="mb-20 animate-stagger-tutorial opacity-0">
+                    <div className="mb-20 animate-stagger-tutorial">
                         <h2 className="text-white text-2xl font-bold mb-8 flex items-center gap-3">
                             <span className="material-symbols-outlined text-primary">visibility</span>
                             {t.tutorial.visualGuide.title}
@@ -230,7 +222,7 @@ export default function TutorialPage() {
                     </div>
 
                     {/* Call to Action */}
-                    <div className="flex flex-col items-center justify-center py-12 animate-stagger-tutorial opacity-0">
+                    <div className="flex flex-col items-center justify-center py-12 animate-stagger-tutorial">
                         <button
                             onClick={handleLaunchCamera}
                             className="relative group bg-primary hover:bg-emerald-400 text-black px-10 py-5 rounded-2xl font-black text-xl flex items-center gap-4 transition-all hover:scale-105 active:scale-95 shadow-[0_0_40px_-10px_rgba(60,249,26,0.6)]"
