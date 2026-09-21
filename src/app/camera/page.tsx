@@ -57,6 +57,9 @@ function CameraContent() {
     const [formScore, setFormScore] = useState(100);
     const [riskLevel, setRiskLevel] = useState<{ level: string; label: string; label_th: string; score: number; color: string; factors: string[]; recommendation: string } | null>(null);
 
+    // Workout elapsed time tracking for error timestamps
+    const workoutStartTimeRef = useRef<number>(0);
+
     // Stats tracking
     const statsRef = useRef({ scores: [] as number[], exerciseName: exerciseName });
     useEffect(() => { statsRef.current.exerciseName = exerciseName; }, [exerciseName]);
@@ -111,6 +114,7 @@ function CameraContent() {
         isMockVideoPlaying.current = true;
         setIsTrackingStarted(true);
         isTrackingStartedRef.current = true;
+        workoutStartTimeRef.current = Date.now();
 
         repStateRef.current = "up";
         localRepCountRef.current = 0;
@@ -412,11 +416,23 @@ function CameraContent() {
                                                     if (chunks.length === 0) return;
                                                     const blob = new Blob(chunks, { type: 'video/webm' });
                                                     const url = URL.createObjectURL(blob);
+                                                    const elapsedSec = Math.round((Date.now() - workoutStartTimeRef.current) / 1000);
+                                                    const mins = Math.floor(elapsedSec / 60);
+                                                    const secs = elapsedSec % 60;
                                                     const errorRecord = {
                                                         url,
                                                         title: data.error_type || t.camera.feedback.correctionNeeded,
                                                         detail: data.feedback,
-                                                        time: new Date().toLocaleTimeString()
+                                                        time: new Date().toLocaleTimeString(),
+                                                        elapsedSeconds: elapsedSec,
+                                                        elapsedFormatted: `${mins}:${secs.toString().padStart(2, '0')}`,
+                                                        repNumber: localRepCountRef.current,
+                                                        riskLevel: data.risk_assessment?.risk_level || 'unknown',
+                                                        riskScore: data.risk_assessment?.risk_score || 0,
+                                                        riskLabelTh: data.risk_assessment?.risk_label_th || '',
+                                                        riskColor: data.risk_assessment?.risk_color || '#f59e0b',
+                                                        riskFactors: data.risk_assessment?.risk_factors || [],
+                                                        recommendation: data.risk_assessment?.recommendation || '',
                                                     };
                                                     const prevErrors = JSON.parse(sessionStorage.getItem('fitvision_errors') || '[]');
                                                     sessionStorage.setItem('fitvision_errors', JSON.stringify([...prevErrors, errorRecord]));
@@ -666,7 +682,7 @@ function CameraContent() {
                                                 const timer = setInterval(() => {
                                                     count -= 1;
                                                     if (count > 0) setCountdown(count);
-                                                    else { clearInterval(timer); setCountdown(null); setIsTrackingStarted(true); isTrackingStartedRef.current = true; }
+                                                    else { clearInterval(timer); setCountdown(null); setIsTrackingStarted(true); isTrackingStartedRef.current = true; workoutStartTimeRef.current = Date.now(); }
                                                 }, 1000);
                                             }}
                                             disabled={!isModelReady || !isBackendReady}
