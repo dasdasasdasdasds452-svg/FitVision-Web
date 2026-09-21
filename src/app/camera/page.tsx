@@ -55,6 +55,7 @@ function CameraContent() {
     const [feedbackTitle, setFeedbackTitle] = useState("AI Ready");
     const [feedbackDetail, setFeedbackDetail] = useState("Start exercising to get feedback.");
     const [formScore, setFormScore] = useState(100);
+    const [riskLevel, setRiskLevel] = useState<{ level: string; label: string; label_th: string; score: number; color: string; factors: string[]; recommendation: string } | null>(null);
 
     // Stats tracking
     const statsRef = useRef({ scores: [] as number[], exerciseName: exerciseName });
@@ -376,6 +377,19 @@ function CameraContent() {
 
                                     setFormScore(currentScore);
                                     statsRef.current.scores.push(currentScore);
+
+                                    // Parse injury risk assessment from API
+                                    if (data.risk_assessment) {
+                                        setRiskLevel({
+                                            level: data.risk_assessment.risk_level,
+                                            label: data.risk_assessment.risk_label,
+                                            label_th: data.risk_assessment.risk_label_th,
+                                            score: data.risk_assessment.risk_score,
+                                            color: data.risk_assessment.risk_color,
+                                            factors: data.risk_assessment.risk_factors,
+                                            recommendation: data.risk_assessment.recommendation,
+                                        });
+                                    }
 
                                     if (!isFormCorrect) {
                                         const now = Date.now();
@@ -710,13 +724,13 @@ function CameraContent() {
 
                     <CameraMobileHUD props={{
                         t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, 
-                        currentReps, repGoal, exerciseName, endWorkoutData
+                        currentReps, repGoal, exerciseName, endWorkoutData, riskLevel
                     }} />
                 </div>
 
                 <CameraDesktopPanel props={{
                         t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, 
-                        currentReps, repGoal, exerciseName, endWorkoutData
+                        currentReps, repGoal, exerciseName, endWorkoutData, riskLevel
                     }} />
             </div>
         </div>

@@ -1,5 +1,15 @@
 import Link from "next/link";
 
+interface RiskLevelData {
+    level: string;
+    label: string;
+    label_th: string;
+    score: number;
+    color: string;
+    factors: string[];
+    recommendation: string;
+}
+
 export interface CameraOverlayProps {
     t: any;
     isTrackingStarted: boolean;
@@ -11,10 +21,11 @@ export interface CameraOverlayProps {
     repGoal: number;
     exerciseName: string;
     endWorkoutData: () => void;
+    riskLevel: RiskLevelData | null;
 }
 
 export function CameraMobileHUD({ props }: { props: CameraOverlayProps }) {
-    const { t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, currentReps, repGoal, endWorkoutData } = props;
+    const { t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, currentReps, repGoal, endWorkoutData, riskLevel } = props;
     
     if (!isTrackingStarted) return null;
     
@@ -32,6 +43,13 @@ export function CameraMobileHUD({ props }: { props: CameraOverlayProps }) {
                             <span className={`font-bold text-sm truncate ${isGoodForm ? "text-primary" : "text-red-300"}`}>{feedbackTitle}</span>
                         </div>
                         <p className={`text-xs leading-tight line-clamp-2 ${isGoodForm ? "text-white/60" : "text-red-200/80"}`}>{feedbackDetail}</p>
+                        {/* Injury Risk Badge (Mobile) */}
+                        {riskLevel && (
+                            <div className="flex items-center gap-1 mt-1">
+                                <span className="material-symbols-outlined text-xs" style={{ color: riskLevel.color }}>health_and_safety</span>
+                                <span className="text-[10px] font-bold" style={{ color: riskLevel.color }}>{riskLevel.label_th}</span>
+                            </div>
+                        )}
                     </div>
                     <div className="shrink-0 text-center">
                         <span className="text-blue-400 font-black text-2xl leading-none">{currentReps}</span>
@@ -49,9 +67,16 @@ export function CameraMobileHUD({ props }: { props: CameraOverlayProps }) {
 }
 
 export function CameraDesktopPanel({ props }: { props: CameraOverlayProps }) {
-    const { t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, currentReps, repGoal, exerciseName, endWorkoutData } = props;
+    const { t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, currentReps, repGoal, exerciseName, endWorkoutData, riskLevel } = props;
     
     if (!isTrackingStarted) return null;
+
+    // Derive risk display from API data or fall back to form-based
+    const riskLabel = riskLevel ? riskLevel.label_th : (isGoodForm ? t.camera.lowRisk : t.camera.highRisk);
+    const riskColor = riskLevel ? riskLevel.color : (isGoodForm ? "#22c55e" : "#f97316");
+    const riskIcon = riskLevel
+        ? (riskLevel.level === "low" ? "verified_user" : riskLevel.level === "critical" ? "emergency" : "health_and_safety")
+        : "health_and_safety";
     
     return (
         <aside className="hidden lg:flex flex-col w-80 xl:w-96 bg-[#0a0a0a] border-l border-white/5 p-5 xl:p-6 gap-5 overflow-y-auto">
@@ -76,17 +101,45 @@ export function CameraDesktopPanel({ props }: { props: CameraOverlayProps }) {
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white/5 rounded-2xl p-4 border border-white/5 text-center">
-                    <span className={`material-symbols-outlined text-xl ${isGoodForm ? "text-primary" : "text-orange-400"}`}>health_and_safety</span>
-                    <p className="text-white font-bold text-sm mt-1">{isGoodForm ? t.camera.lowRisk : t.camera.highRisk}</p>
-                    <p className="text-white/30 text-[10px]">{t.camera.injuryRisk}</p>
+            {/* ── Injury Risk Assessment Card ── */}
+            <div className="rounded-2xl p-4 border border-white/10 bg-white/5">
+                <div className="flex items-center gap-2 mb-3">
+                    <span className="material-symbols-outlined text-xl" style={{ color: riskColor }}>{riskIcon}</span>
+                    <div>
+                        <p className="font-bold text-sm" style={{ color: riskColor }}>{riskLabel}</p>
+                        <p className="text-white/30 text-[10px]">{t.camera.injuryRisk}</p>
+                    </div>
+                    {riskLevel && (
+                        <div className="ml-auto text-right">
+                            <span className="text-lg font-black" style={{ color: riskColor }}>{riskLevel.score}</span>
+                            <span className="text-white/30 text-[10px] ml-0.5">/100</span>
+                        </div>
+                    )}
                 </div>
-                <div className="bg-white/5 rounded-2xl p-4 border border-white/5 text-center">
-                    <span className="material-symbols-outlined text-xl text-blue-400">speed</span>
-                    <p className="text-white font-bold text-sm mt-1">{t.camera.normalSpeed}</p>
-                    <p className="text-white/30 text-[10px]">{t.camera.repTempo}</p>
+                {/* Risk score bar */}
+                <div className="w-full bg-white/5 rounded-full h-2 mb-2 border border-white/10 overflow-hidden">
+                    <div className="h-full transition-all duration-500 rounded-full" style={{ 
+                        width: `${riskLevel ? riskLevel.score : (isGoodForm ? 10 : 60)}%`,
+                        backgroundColor: riskColor
+                    }}></div>
                 </div>
+                {/* Risk factors list */}
+                {riskLevel && riskLevel.factors.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                        {riskLevel.factors.slice(0, 3).map((factor, i) => (
+                            <p key={i} className="text-[10px] text-white/40 flex items-start gap-1">
+                                <span className="text-white/20 mt-px">•</span>
+                                <span>{factor}</span>
+                            </p>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            <div className="bg-white/5 rounded-2xl p-4 border border-white/5 text-center">
+                <span className="material-symbols-outlined text-xl text-blue-400">speed</span>
+                <p className="text-white font-bold text-sm mt-1">{t.camera.normalSpeed}</p>
+                <p className="text-white/30 text-[10px]">{t.camera.repTempo}</p>
             </div>
 
             <div className="mt-auto pt-5">
