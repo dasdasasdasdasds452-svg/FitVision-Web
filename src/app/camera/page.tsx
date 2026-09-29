@@ -10,7 +10,7 @@ import { calculateAngle, Landmark } from "@/lib/poseUtils";
 
 function CameraContent() {
     const searchParams = useSearchParams();
-    const { t } = useLanguage();
+    const { t, language } = useLanguage();
     const model = searchParams.get("model")?.toLowerCase() || "benchpress";
     const repsParam = parseInt(searchParams.get("reps") || "12", 10);
 
@@ -615,94 +615,199 @@ function CameraContent() {
 
                             {/* Main warmup card */}
                             {countdown === null && (
-                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black via-black/90 to-transparent pt-12 pb-5 px-4 md:px-0">
-                                    <div className="md:max-w-md md:mx-auto flex flex-col gap-4">
+                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black via-black/95 to-transparent pt-12 pb-6 px-4">
+                                    <div className="max-w-md mx-auto flex flex-col gap-4 bg-[#0d140e]/95 backdrop-blur-2xl border border-primary/25 rounded-3xl p-5 md:p-6 shadow-[0_15px_50px_rgba(0,0,0,0.9)] relative overflow-hidden">
+                                        {/* Subtle top neon ambient glow line */}
+                                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2/3 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent opacity-90" />
 
-                                        {/* ─ Step Progress ─ */}
-                                        <div className="flex items-center gap-2">
-                                            <div className={`flex-1 flex items-center gap-2 py-2 px-3 rounded-xl border text-xs font-bold transition-all ${areScriptsLoaded ? "border-primary/30 bg-primary/5 text-primary" : "border-white/10 bg-white/5 text-slate-500"}`}>
-                                                <span className={`text-sm material-symbols-outlined ${areScriptsLoaded ? "text-primary" : "text-slate-600"}`}>
-                                                    {areScriptsLoaded ? "check_circle" : "camera_alt"}
-                                                </span>
-                                                <span>{areScriptsLoaded ? t.camera.warmup.cameraReady : t.camera.warmup.cameraLoading}</span>
-                                            </div>
-                                            <div className={`w-4 h-px ${isModelReady ? "bg-primary/40" : "bg-white/10"}`}></div>
-                                            <div className={`flex-1 flex items-center gap-2 py-2 px-3 rounded-xl border text-xs font-bold transition-all ${isModelReady ? "border-primary/30 bg-primary/5 text-primary" : "border-white/10 bg-white/5 text-slate-500"}`}>
-                                                <span className={`text-sm material-symbols-outlined ${isModelReady ? "text-primary" : "text-slate-600 animate-pulse"}`}>
-                                                    {isModelReady ? "check_circle" : "psychology"}
-                                                </span>
-                                                <span>{isModelReady ? t.camera.warmup.poseReady : t.camera.warmup.poseLoading}</span>
-                                            </div>
-                                            <div className={`w-4 h-px ${isBackendReady ? "bg-primary/40" : "bg-white/10"}`}></div>
-                                            <div className={`flex-1 flex items-center gap-2 py-2 px-3 rounded-xl border text-xs font-bold transition-all ${isBackendReady ? "border-primary/30 bg-primary/5 text-primary" : "border-orange-400/30 bg-orange-400/5 text-orange-300"}`}>
-                                                <span className={`text-sm material-symbols-outlined ${isBackendReady ? "text-primary" : "text-orange-400 animate-pulse"}`}>
-                                                    {isBackendReady ? "check_circle" : "cloud_sync"}
-                                                </span>
-                                                <span>{isBackendReady ? t.camera.warmup.serverReady : backendStatus === "waking" ? t.camera.warmup.serverWaking : t.camera.warmup.serverLoading}</span>
-                                            </div>
-                                        </div>
-
-                                        {/* Server context message */}
-                                        {!isBackendReady && (
-                                            <div className="flex items-start gap-2 bg-orange-400/5 border border-orange-400/15 rounded-xl px-3 py-2">
-                                                <span className="material-symbols-outlined text-orange-400 text-base mt-0.5 shrink-0">info</span>
-                                                <p className="text-orange-200/60 text-xs leading-relaxed">
-                                                    {t.camera.warmup.serverMessage} <span className="text-orange-300 font-bold">{t.camera.warmup.serverTime}</span> {t.camera.warmup.serverHint}
-                                                </p>
-                                            </div>
-                                        )}
-
-                                        {/* Exercise selector + reps */}
-                                        <div className="flex gap-3">
-                                            <div className="flex-1 relative">
-                                                <label className="text-white/40 text-[10px] uppercase tracking-wider font-bold mb-1 block">{t.camera.warmup.exerciseLabel}</label>
-                                                <select value={currentExercise} onChange={(e) => setCurrentExercise(e.target.value)}
-                                                    className="appearance-none w-full bg-white/5 border border-white/10 rounded-xl text-white font-bold py-2.5 pl-3 pr-8 focus:outline-none focus:border-primary cursor-pointer text-sm">
-                                                    <option value="benchpress">{t.camera.exerciseOptions.benchpress}</option>
-                                                    <option value="squat">{t.camera.exerciseOptions.squat}</option>
-                                                    <option value="deadlift">{t.camera.exerciseOptions.deadlift}</option>
-                                                </select>
-                                                <span className="material-symbols-outlined absolute right-2 bottom-2.5 text-white/40 pointer-events-none text-base">expand_more</span>
-                                            </div>
-                                            <div>
-                                                <label className="text-white/40 text-[10px] uppercase tracking-wider font-bold mb-1 block">{t.camera.warmup.goalLabel}</label>
-                                                <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-xl px-3 h-[42px]">
-                                                    <button onClick={() => setRepGoal(r => Math.max(1, r - 1))} className="text-white/40 hover:text-white w-6 text-lg font-bold text-center leading-none">−</button>
-                                                    <span className="text-primary font-black text-lg w-7 text-center">{repGoal}</span>
-                                                    <button onClick={() => setRepGoal(r => Math.min(50, r + 1))} className="text-white/40 hover:text-white w-6 text-lg font-bold text-center leading-none">+</button>
+                                        {/* Header: Title & AI Status */}
+                                        <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                                            <div className="flex items-center gap-2">
+                                                <div className="size-8 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary shadow-[0_0_12px_rgba(57,255,20,0.25)]">
+                                                    <span className="material-symbols-outlined text-lg font-bold">tune</span>
                                                 </div>
-                                                <label className="text-white/30 text-[9px] text-center block mt-0.5">{t.camera.reps}</label>
+                                                <div>
+                                                    <h3 className="text-white font-black text-sm tracking-tight leading-none">
+                                                        {language === "th" ? "ตั้งค่าการฝึก" : "Workout Setup"}
+                                                    </h3>
+                                                    <span className="text-[10px] text-slate-400 font-medium">
+                                                        {language === "th" ? "เลือกท่าและจำนวนครั้งเป้าหมาย" : "Configure exercise & target"}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* AI Engine Status Badge */}
+                                            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs shadow-inner">
+                                                <span className={`size-2 rounded-full ${isModelReady ? "bg-primary animate-pulse shadow-[0_0_8px_#39ff14]" : "bg-orange-400 animate-ping"}`} />
+                                                <span className={isModelReady ? "text-primary font-bold text-[11px]" : "text-slate-400 font-medium text-[11px]"}>
+                                                    {isModelReady 
+                                                        ? (isBackendReady 
+                                                            ? (language === "th" ? "AI วิเคราะห์พร้อม" : "AI Engine Active")
+                                                            : (language === "th" ? "กล้อง AI พร้อม" : "Vision AI Active"))
+                                                        : (language === "th" ? "กำลังเตรียม AI..." : "Calibrating AI...")}
+                                                </span>
                                             </div>
                                         </div>
 
-                                        {/* Start button */}
+                                        {/* Exercise Selector: 3 Segmented Interactive Cards */}
+                                        <div className="flex flex-col gap-1.5">
+                                            <label className="text-slate-400 text-[11px] uppercase tracking-wider font-bold">
+                                                {t.camera.warmup.exerciseLabel}
+                                            </label>
+                                            <div className="grid grid-cols-3 gap-2 md:gap-2.5">
+                                                {[
+                                                    { 
+                                                        id: "benchpress", 
+                                                        name: t.camera.exerciseName.benchpress, 
+                                                        icon: "fitness_center", 
+                                                        focus: language === "th" ? "อก • หลังแขน" : "Chest & Arms" 
+                                                    },
+                                                    { 
+                                                        id: "squat", 
+                                                        name: t.camera.exerciseName.squat, 
+                                                        icon: "accessibility_new", 
+                                                        focus: language === "th" ? "ต้นขา • สะโพก" : "Quads & Glutes" 
+                                                    },
+                                                    { 
+                                                        id: "deadlift", 
+                                                        name: t.camera.exerciseName.deadlift, 
+                                                        icon: "sports_gymnastics", 
+                                                        focus: language === "th" ? "หลัง • แฮมสตริง" : "Back & Core" 
+                                                    },
+                                                ].map((item) => {
+                                                    const isSelected = currentExercise === item.id;
+                                                    return (
+                                                        <button
+                                                            key={item.id}
+                                                            type="button"
+                                                            onClick={() => setCurrentExercise(item.id)}
+                                                            className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all text-center group cursor-pointer relative ${
+                                                                isSelected
+                                                                    ? "bg-primary/15 border-primary text-white shadow-[0_0_20px_rgba(57,255,20,0.25)] ring-1 ring-primary/40"
+                                                                    : "bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/[0.08] text-slate-300 active:scale-95"
+                                                            }`}
+                                                        >
+                                                            {isSelected && (
+                                                                <div className="absolute top-2 right-2 size-2 rounded-full bg-primary shadow-[0_0_8px_#39ff14]" />
+                                                            )}
+                                                            <div className={`size-10 rounded-xl flex items-center justify-center mb-1.5 transition-transform group-hover:scale-110 ${
+                                                                isSelected ? "bg-primary/20 text-primary" : "bg-white/5 text-slate-400 group-hover:text-white"
+                                                            }`}>
+                                                                <span className="material-symbols-outlined text-2xl">{item.icon}</span>
+                                                            </div>
+                                                            <span className={`text-xs md:text-sm font-black tracking-tight leading-tight ${isSelected ? "text-white" : "text-slate-200"}`}>
+                                                                {item.name}
+                                                            </span>
+                                                            <span className={`text-[10px] mt-0.5 font-medium leading-none ${isSelected ? "text-primary/90" : "text-slate-400"}`}>
+                                                                {item.focus}
+                                                            </span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {/* Goal Reps Selector with Presets & Stepper */}
+                                        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-2xl bg-white/[0.03] border border-white/10">
+                                            <div className="flex items-center gap-2.5 self-start sm:self-center">
+                                                <div className="size-8 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
+                                                    <span className="material-symbols-outlined text-lg">flag</span>
+                                                </div>
+                                                <div>
+                                                    <div className="text-white text-xs font-bold leading-tight">
+                                                        {language === "th" ? "เป้าหมายจำนวนครั้ง" : "Target Repetitions"}
+                                                    </div>
+                                                    <div className="text-slate-400 text-[10px]">
+                                                        {language === "th" ? "นับรอบและวิเคราะห์ทุกครั้ง" : "AI counts reps & tracks tempo"}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                                                {/* Preset Pills */}
+                                                <div className="flex items-center gap-1">
+                                                    {[8, 10, 12, 15].map((preset) => (
+                                                        <button
+                                                            key={preset}
+                                                            type="button"
+                                                            onClick={() => setRepGoal(preset)}
+                                                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                                                repGoal === preset
+                                                                    ? "bg-primary text-black shadow-[0_0_10px_rgba(57,255,20,0.3)]"
+                                                                    : "bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
+                                                            }`}
+                                                        >
+                                                            {preset}
+                                                        </button>
+                                                    ))}
+                                                </div>
+
+                                                {/* Stepper */}
+                                                <div className="flex items-center bg-black/40 border border-white/15 rounded-xl px-1.5 py-0.5">
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => setRepGoal(r => Math.max(1, r - 1))} 
+                                                        className="text-slate-300 hover:text-white w-7 h-7 flex items-center justify-center text-lg font-bold rounded-lg hover:bg-white/10 active:scale-95 transition-all cursor-pointer"
+                                                    >
+                                                        −
+                                                    </button>
+                                                    <span className="text-primary font-black text-base w-7 text-center font-mono">
+                                                        {repGoal}
+                                                    </span>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => setRepGoal(r => Math.min(50, r + 1))} 
+                                                        className="text-slate-300 hover:text-white w-7 h-7 flex items-center justify-center text-lg font-bold rounded-lg hover:bg-white/10 active:scale-95 transition-all cursor-pointer"
+                                                    >
+                                                        +
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Main Action Button */}
                                         <button
+                                            type="button"
                                             onClick={() => {
-                                                setCountdown(3); let count = 3;
+                                                setCountdown(3); 
+                                                let count = 3;
                                                 const timer = setInterval(() => {
                                                     count -= 1;
                                                     if (count > 0) setCountdown(count);
-                                                    else { clearInterval(timer); setCountdown(null); setIsTrackingStarted(true); isTrackingStartedRef.current = true; workoutStartTimeRef.current = Date.now(); }
+                                                    else { 
+                                                        clearInterval(timer); 
+                                                        setCountdown(null); 
+                                                        setIsTrackingStarted(true); 
+                                                        isTrackingStartedRef.current = true; 
+                                                        workoutStartTimeRef.current = Date.now(); 
+                                                    }
                                                 }, 1000);
                                             }}
-                                            disabled={!isModelReady || !isBackendReady}
-                                            className={`w-full py-4 rounded-2xl text-base font-black uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-2 ${isModelReady && isBackendReady
-                                                ? "bg-primary text-black cursor-pointer hover:scale-[1.02] active:scale-[0.98] shadow-[0_0_25px_rgba(57,255,20,0.35)]"
-                                                : "bg-white/5 border border-white/10 text-slate-500 cursor-not-allowed"
-                                                }`}>
-                                            <span className="material-symbols-outlined text-xl">
-                                                {isModelReady && isBackendReady ? "play_arrow" : "hourglass_top"}
+                                            disabled={!isModelReady}
+                                            className={`w-full py-4 rounded-2xl text-base font-black uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-2 ${
+                                                isModelReady
+                                                    ? "bg-primary text-black hover:shadow-[0_0_30px_rgba(57,255,20,0.5)] hover:scale-[1.01] active:scale-[0.98] cursor-pointer"
+                                                    : "bg-white/5 border border-white/10 text-slate-500 cursor-not-allowed"
+                                            }`}
+                                        >
+                                            <span className="material-symbols-outlined text-2xl font-bold">
+                                                {isModelReady ? "play_arrow" : "hourglass_top"}
                                             </span>
-                                            {isModelReady && isBackendReady
-                                                ? t.camera.warmup.startAnalysis
-                                                : !isModelReady ? t.camera.warmup.loadingPose
-                                                    : t.camera.warmup.waitingServer}
+                                            <span>
+                                                {isModelReady
+                                                    ? (language === "th" ? "เริ่มออกกำลังกาย" : t.camera.warmup.startAnalysis)
+                                                    : (language === "th" ? "กำลังเตรียมระบบกล้อง AI..." : t.camera.warmup.loadingPose)}
+                                            </span>
                                         </button>
 
-                                        {/* Upload fallback */}
-                                        <label className={`w-full py-2.5 rounded-xl text-xs font-bold tracking-wider transition-all flex items-center justify-center gap-2 border cursor-pointer ${isModelReady ? "border-white/8 text-white/30 hover:text-white/50 hover:border-white/15" : "border-white/5 text-white/15 pointer-events-none"}`}>
-                                            <span className="material-symbols-outlined text-sm text-blue-400/60">upload_file</span>
-                                            {t.camera.warmup.uploadVideo}
+                                        {/* Video Upload Fallback */}
+                                        <label className={`w-full py-2.5 rounded-xl text-xs font-semibold tracking-wider transition-all flex items-center justify-center gap-2 border ${
+                                            isModelReady 
+                                                ? "border-white/10 bg-white/5 text-slate-300 hover:text-white hover:bg-white/10 hover:border-white/20 active:scale-98 cursor-pointer" 
+                                                : "border-white/5 text-slate-600 pointer-events-none"
+                                        }`}>
+                                            <span className="material-symbols-outlined text-base text-primary">upload_file</span>
+                                            <span>{t.camera.warmup.uploadVideo}</span>
                                             <input type="file" accept="video/*" className="hidden" onChange={handleVideoUpload} disabled={!isModelReady} />
                                         </label>
                                     </div>
