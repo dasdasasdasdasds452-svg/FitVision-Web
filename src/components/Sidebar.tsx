@@ -125,8 +125,9 @@ export default function Sidebar() {
                             <span className="font-medium">{t.nav.settings}</span>
                         </Link>
                         <button
+                            type="button"
                             onClick={logout}
-                            className="flex items-center gap-4 px-4 py-3 rounded-xl transition-colors text-slate-400 hover:text-red-400 hover:bg-red-500/10 text-left mt-4"
+                            className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all text-slate-400 hover:text-red-400 hover:bg-red-500/10 text-left mt-4 cursor-pointer active:scale-95 w-full"
                         >
                             <span className="material-symbols-outlined">logout</span>
                             <span className="font-medium">{t.nav.logout}</span>
@@ -198,8 +199,9 @@ export default function Sidebar() {
                     <span className="text-[10px] font-medium">{t.nav.settings}</span>
                 </Link>
                 <button
+                    type="button"
                     onClick={logout}
-                    className="flex flex-col items-center gap-1 transition-colors text-slate-400 hover:text-red-400"
+                    className="flex flex-col items-center gap-1 transition-all text-slate-400 hover:text-red-400 cursor-pointer active:scale-95"
                 >
                     <span className="material-symbols-outlined">logout</span>
                     <span className="text-[10px] font-medium">{t.nav.logout}</span>

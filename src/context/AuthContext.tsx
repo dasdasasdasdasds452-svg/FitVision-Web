@@ -24,13 +24,15 @@ const DEMO_USER: User = {
 } as User;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-    const [isLoggedIn, setIsLoggedIn] = useState(true);
-    const [user, setUser] = useState<User | null>(DEMO_USER);
+    const isLoggedOutInit = typeof window !== "undefined" && localStorage.getItem("fitvision_logged_out") === "true";
+    const [isLoggedIn, setIsLoggedIn] = useState(!isLoggedOutInit);
+    const [user, setUser] = useState<User | null>(isLoggedOutInit ? null : DEMO_USER);
     const router = useRouter();
     const pathname = usePathname();
 
     const loginAsDemo = () => {
         if (typeof window !== "undefined") {
+            localStorage.removeItem("fitvision_logged_out");
             localStorage.setItem("fitvision_demo_user", "true");
         }
         setIsLoggedIn(true);
@@ -44,11 +46,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         let isMounted = true;
 
         const checkSession = async () => {
+            const isExplicitlyLoggedOut = typeof window !== "undefined" && localStorage.getItem("fitvision_logged_out") === "true";
+            if (isExplicitlyLoggedOut) {
+                if (!isMounted) return;
+                setIsLoggedIn(false);
+                setUser(null);
+                if (pathname !== "/login") {
+                    router.push("/login");
+                }
+                return;
+            }
+
             try {
                 // Short timeout race: if Supabase is offline or paused, don't block the app
                 const sessionPromise = supabase.auth.getSession();
                 const timeoutPromise = new Promise<{ data: { session: null }; error: null }>((resolve) =>
-                    setTimeout(() => resolve({ data: { session: null }, error: null }), 1200)
+                    setTimeout(() => resolve({ data: { session: null }, error: null }), 600)
                 );
                 const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
 
@@ -77,6 +90,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
                 if (!isMounted) return;
                 if (session?.user) {
+                    if (typeof window !== "undefined") {
+                        localStorage.removeItem("fitvision_logged_out");
+                    }
                     setIsLoggedIn(true);
                     setUser(session.user);
                     if (event === "SIGNED_IN" && pathname === "/login") {
@@ -97,18 +113,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, [pathname, router]);
 
     const logout = async () => {
+        // 1. Immediately record logout in localStorage & clear cache
+        if (typeof window !== "undefined") {
+            localStorage.removeItem("fitvision_demo_user");
+            localStorage.setItem("fitvision_logged_out", "true");
+            sessionStorage.clear();
+        }
+
+        // 2. Immediately update state
+        setIsLoggedIn(false);
+        setUser(null);
+
+        // 3. Immediately redirect to login
+        router.push("/login");
+
+        // 4. Background fire-and-forget signOut with short timeout
         try {
-            await supabase.auth.signOut();
+            const signOutPromise = supabase.auth.signOut();
+            const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 200));
+            await Promise.race([signOutPromise, timeoutPromise]);
         } catch {
             // Ignore offline signOut error
         }
-        if (typeof window !== "undefined") {
-            localStorage.removeItem("fitvision_demo_user");
-        }
-        setIsLoggedIn(false);
-        setUser(null);
-        sessionStorage.clear();
-        router.push("/login");
     };
 
     return (
