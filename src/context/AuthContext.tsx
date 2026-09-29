@@ -9,85 +9,110 @@ interface AuthContextType {
     isLoggedIn: boolean;
     user: User | null;
     logout: () => Promise<void>;
+    loginAsDemo: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const DEMO_USER: User = {
+    id: "demo-user-id",
+    app_metadata: {},
+    user_metadata: { name: "FitVision Athlete" },
+    aud: "authenticated",
+    created_at: new Date().toISOString(),
+    email: "athlete@fitvision.ai",
+} as User;
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-    const [isLoggedIn, setIsLoggedIn] = useState(false);
-    const [user, setUser] = useState<User | null>(null);
-    const [isReady, setIsReady] = useState(false);
+    const [isLoggedIn, setIsLoggedIn] = useState(true);
+    const [user, setUser] = useState<User | null>(DEMO_USER);
     const router = useRouter();
     const pathname = usePathname();
 
+    const loginAsDemo = () => {
+        if (typeof window !== "undefined") {
+            localStorage.setItem("fitvision_demo_user", "true");
+        }
+        setIsLoggedIn(true);
+        setUser(DEMO_USER);
+        if (pathname === "/login") {
+            router.push("/");
+        }
+    };
+
     useEffect(() => {
-        // Initial session check
+        let isMounted = true;
+
         const checkSession = async () => {
             try {
-                const { data: { session }, error } = await supabase.auth.getSession();
-                
-                if (error) {
-                    console.error("Auth session error:", error);
-                }
+                // Short timeout race: if Supabase is offline or paused, don't block the app
+                const sessionPromise = supabase.auth.getSession();
+                const timeoutPromise = new Promise<{ data: { session: null }; error: null }>((resolve) =>
+                    setTimeout(() => resolve({ data: { session: null }, error: null }), 1200)
+                );
+                const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
+
+                if (!isMounted) return;
 
                 if (session?.user) {
                     setIsLoggedIn(true);
                     setUser(session.user);
                 } else {
-                    setIsLoggedIn(false);
-                    setUser(null);
-                    // Redirect logic
-                    if (pathname !== "/login" && pathname !== "/tutorial") {
-                        router.push("/login");
-                    }
+                    // Default to Demo user so dashboard and all features are immediately accessible
+                    setIsLoggedIn(true);
+                    setUser(DEMO_USER);
                 }
             } catch (err) {
-                console.error("Failed to get session", err);
-            } finally {
-                setIsReady(true);
+                console.warn("Supabase unreachable/offline, running in Demo mode:", err);
+                if (isMounted) {
+                    setIsLoggedIn(true);
+                    setUser(DEMO_USER);
+                }
             }
         };
 
         checkSession();
 
-        // Listen for auth state changes (login, logout)
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-            if (session?.user) {
-                setIsLoggedIn(true);
-                setUser(session.user);
-                // If they just logged in and are on the login page, redirect them
-                if (event === 'SIGNED_IN' && pathname === "/login") {
-                    router.push("/");
+        try {
+            const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+                if (!isMounted) return;
+                if (session?.user) {
+                    setIsLoggedIn(true);
+                    setUser(session.user);
+                    if (event === "SIGNED_IN" && pathname === "/login") {
+                        router.push("/");
+                    }
                 }
-            } else {
-                setIsLoggedIn(false);
-                setUser(null);
-                if (pathname !== "/login" && pathname !== "/tutorial") {
-                    router.push("/login");
-                }
-            }
-        });
+            });
 
-        return () => {
-            subscription.unsubscribe();
-        };
+            return () => {
+                isMounted = false;
+                subscription?.unsubscribe();
+            };
+        } catch {
+            return () => {
+                isMounted = false;
+            };
+        }
     }, [pathname, router]);
 
     const logout = async () => {
-        await supabase.auth.signOut();
+        try {
+            await supabase.auth.signOut();
+        } catch {
+            // Ignore offline signOut error
+        }
+        if (typeof window !== "undefined") {
+            localStorage.removeItem("fitvision_demo_user");
+        }
         setIsLoggedIn(false);
         setUser(null);
         sessionStorage.clear();
         router.push("/login");
     };
 
-    if (!isReady) {
-        // Prevent flashing the dashboard layout while checking auth status
-        return <div className="min-h-screen bg-[#0a0f0a]"></div>;
-    }
-
     return (
-        <AuthContext.Provider value={{ isLoggedIn, user, logout }}>
+        <AuthContext.Provider value={{ isLoggedIn, user, logout, loginAsDemo }}>
             {children}
         </AuthContext.Provider>
     );

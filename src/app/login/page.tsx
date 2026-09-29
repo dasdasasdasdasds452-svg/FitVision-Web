@@ -5,17 +5,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useLanguage } from "@/context/LanguageContext";
+import { useAuth } from "@/context/AuthContext";
 
 export default function LoginPage() {
     const { t } = useLanguage();
     const router = useRouter();
+    const { loginAsDemo } = useAuth();
 
     const [email, setEmail] = React.useState("");
     const [password, setPassword] = React.useState("");
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
     const [isSignUp, setIsSignUp] = React.useState(false);
-
 
     const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -29,7 +30,6 @@ export default function LoginPage() {
                     password,
                 });
                 if (signUpError) throw signUpError;
-                // Typically you'd tell them to check their email here, but we'll assume it logs in or shows an alert
                 alert(t.login.signUpSuccess);
                 setIsSignUp(false);
             } else {
@@ -38,9 +38,18 @@ export default function LoginPage() {
                     password,
                 });
                 if (signInError) throw signInError;
-                // AuthContext will handle redirect
             }
         } catch (err: any) {
+            console.warn("Authentication error, checking fallback:", err);
+            // If Supabase failed to fetch / offline, automatically log in as Demo user
+            if (
+                err?.message?.toLowerCase().includes("fetch") ||
+                err?.name === "AuthRetryableFetchError" ||
+                !err?.status
+            ) {
+                loginAsDemo();
+                return;
+            }
             setError(err.message || "An error occurred during authentication.");
         } finally {
             setLoading(false);
@@ -208,6 +217,15 @@ export default function LoginPage() {
                         </div>
                         <button disabled={loading} type="submit" className="w-full bg-primary text-black font-black py-4 rounded-xl uppercase tracking-widest hover:shadow-[0_0_20px_rgba(60,249,26,0.6)] transform transition-all active:scale-95 mt-2 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0f0a]">
                             {loading ? t.login.processing : (isSignUp ? t.login.signUp : t.login.signIn)}
+                        </button>
+
+                        <button 
+                            type="button" 
+                            onClick={loginAsDemo}
+                            className="w-full bg-white/5 hover:bg-white/10 border border-primary/40 text-primary font-bold py-3.5 rounded-xl uppercase tracking-wider transition-all flex items-center justify-center gap-2 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                        >
+                            <span className="material-symbols-outlined text-lg">bolt</span>
+                            เข้าใช้งานทันที (Demo / Guest Mode)
                         </button>
                     </form>
 
