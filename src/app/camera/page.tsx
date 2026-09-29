@@ -22,6 +22,23 @@ function CameraContent() {
 
     const [countdown, setCountdown] = useState<number | null>(null);
     const [currentReps, setCurrentReps] = useState(0);
+    const [isSetupMinimized, setIsSetupMinimized] = useState(false);
+
+    const startWorkoutCountdown = () => {
+        setCountdown(3); 
+        let count = 3;
+        const timer = setInterval(() => {
+            count -= 1;
+            if (count > 0) setCountdown(count);
+            else { 
+                clearInterval(timer); 
+                setCountdown(null); 
+                setIsTrackingStarted(true); 
+                isTrackingStartedRef.current = true; 
+                workoutStartTimeRef.current = Date.now(); 
+            }
+        }, 1000);
+    };
 
     const repStateRef = useRef<"up" | "down">("up");
     const localRepCountRef = useRef<number>(0);
@@ -615,124 +632,165 @@ function CameraContent() {
 
                             {/* Main warmup card */}
                             {countdown === null && (
-                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black via-black/95 to-transparent pt-8 pb-4 md:pb-6 px-3 md:px-4 z-40 max-h-[85vh] overflow-y-auto">
-                                    <div className="max-w-md mx-auto flex flex-col gap-3 md:gap-4 bg-[#0d140e]/95 backdrop-blur-2xl border border-primary/25 rounded-3xl p-4 md:p-5 shadow-[0_15px_50px_rgba(0,0,0,0.9)] relative overflow-hidden">
-                                        {/* Subtle top neon ambient glow line */}
-                                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2/3 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent opacity-90" />
+                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent pt-6 pb-4 md:pb-6 px-3 md:px-4 z-40">
+                                    {isSetupMinimized ? (
+                                        /* Collapsed View: Floating Mini Action Bar for 100% Full Camera Framing */
+                                        <div className="max-w-md mx-auto flex items-center justify-between gap-2 bg-[#0a100b]/80 backdrop-blur-xl border border-primary/30 rounded-2xl p-2.5 shadow-[0_10px_35px_rgba(0,0,0,0.85)] animate-in fade-in slide-in-from-bottom-2 duration-200">
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsSetupMinimized(false)}
+                                                className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold transition-all cursor-pointer active:scale-95 shrink-0 touch-manipulation"
+                                            >
+                                                <span className="material-symbols-outlined text-base text-primary">tune</span>
+                                                <span className="truncate max-w-[130px]">{exerciseName} ({repGoal})</span>
+                                                <span className="material-symbols-outlined text-sm text-slate-400">expand_less</span>
+                                            </button>
 
-                                        {/* Header: Title */}
-                                        <div className="flex items-center justify-between pb-1 border-b border-white/5">
-                                            <div className="flex items-center gap-2">
-                                                <div className="size-7 md:size-8 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary shadow-[0_0_12px_rgba(57,255,20,0.25)]">
-                                                    <span className="material-symbols-outlined text-base md:text-lg font-bold">tune</span>
+                                            <button
+                                                type="button"
+                                                onClick={startWorkoutCountdown}
+                                                disabled={!isModelReady}
+                                                className={`flex-1 py-2.5 px-4 rounded-xl text-xs md:text-sm font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-[0_0_20px_rgba(57,255,20,0.35)] cursor-pointer active:scale-95 touch-manipulation ${
+                                                    isModelReady
+                                                        ? "bg-primary text-black hover:bg-primary/90"
+                                                        : "bg-white/10 text-slate-400 cursor-not-allowed"
+                                                }`}
+                                            >
+                                                <span className="material-symbols-outlined text-lg font-bold">play_arrow</span>
+                                                <span>{language === "th" ? "เริ่มออกกำลังกาย" : "START"}</span>
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        /* Expanded View */
+                                        <div className="max-w-md mx-auto flex flex-col gap-2.5 md:gap-3.5 bg-[#0a100b]/80 backdrop-blur-xl border border-primary/25 rounded-3xl p-3.5 md:p-5 shadow-[0_15px_50px_rgba(0,0,0,0.9)] relative overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
+                                            {/* Subtle top neon ambient glow line */}
+                                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2/3 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent opacity-90" />
+
+                                            {/* Header: Title + Minimize Button */}
+                                            <div className="flex items-center justify-between pb-1 border-b border-white/5">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="size-7 md:size-8 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary shadow-[0_0_12px_rgba(57,255,20,0.25)]">
+                                                        <span className="material-symbols-outlined text-base md:text-lg font-bold">tune</span>
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="text-white font-black text-xs md:text-sm tracking-tight leading-none">
+                                                            {language === "th" ? "ตั้งค่าก่อนเริ่มฝึก" : "Workout Setup"}
+                                                        </h3>
+                                                        <span className="text-[9px] md:text-[10px] text-slate-400 font-medium">
+                                                            {language === "th" ? "เลือกท่าและเป้าหมาย" : "Configure exercise & target"}
+                                                        </span>
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <h3 className="text-white font-black text-xs md:text-sm tracking-tight leading-none">
-                                                        {language === "th" ? "ตั้งค่าก่อนเริ่มฝึก" : "Workout Setup"}
-                                                    </h3>
-                                                    <span className="text-[9px] md:text-[10px] text-slate-400 font-medium">
-                                                        {language === "th" ? "เลือกท่าและเป้าหมายจำนวนครั้ง" : "Configure exercise & target"}
+
+                                                {/* Minimize to preview full camera */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsSetupMinimized(true)}
+                                                    className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white text-[11px] font-bold transition-all cursor-pointer active:scale-95 touch-manipulation"
+                                                    title={language === "th" ? "ซ่อนการ์ดเพื่อดูมุมกล้องเต็มจอ" : "Minimize to check full camera"}
+                                                >
+                                                    <span className="material-symbols-outlined text-sm text-primary">visibility</span>
+                                                    <span>{language === "th" ? "ดูกล้องเต็มจอ" : "Full View"}</span>
+                                                    <span className="material-symbols-outlined text-xs">expand_more</span>
+                                                </button>
+                                            </div>
+
+                                            {/* ── 3-Point System Telemetry Status Bar ── */}
+                                            <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-black/40 border border-white/10 text-[10px] md:text-xs font-semibold">
+                                                {/* 1. Camera */}
+                                                <div className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-xl border transition-all ${
+                                                    areScriptsLoaded 
+                                                        ? "bg-primary/10 border-primary/30 text-primary" 
+                                                        : "bg-white/5 border-white/5 text-slate-400"
+                                                }`}>
+                                                    <span className={`size-1.5 rounded-full shrink-0 ${areScriptsLoaded ? "bg-primary shadow-[0_0_6px_#39ff14]" : "bg-slate-500 animate-pulse"}`} />
+                                                    <span className="material-symbols-outlined text-xs shrink-0">{areScriptsLoaded ? "check_circle" : "videocam"}</span>
+                                                    <span className="truncate">{language === "th" ? "กล้อง" : "Camera"}{areScriptsLoaded ? " ✓" : "..."}</span>
+                                                </div>
+
+                                                {/* 2. Pose AI */}
+                                                <div className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-xl border transition-all ${
+                                                    isModelReady 
+                                                        ? "bg-primary/10 border-primary/30 text-primary" 
+                                                        : "bg-white/5 border-white/5 text-slate-400"
+                                                }`}>
+                                                    <span className={`size-1.5 rounded-full shrink-0 ${isModelReady ? "bg-primary shadow-[0_0_6px_#39ff14]" : "bg-slate-500 animate-pulse"}`} />
+                                                    <span className="material-symbols-outlined text-xs shrink-0">{isModelReady ? "check_circle" : "psychology"}</span>
+                                                    <span className="truncate">{language === "th" ? "ตรวจจับท่า" : "Pose AI"}{isModelReady ? " ✓" : "..."}</span>
+                                                </div>
+
+                                                {/* 3. AI Server */}
+                                                <div className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-xl border transition-all ${
+                                                    isBackendReady 
+                                                        ? "bg-primary/10 border-primary/30 text-primary" 
+                                                        : backendStatus === "waking"
+                                                            ? "bg-amber-500/10 border-amber-500/30 text-amber-300"
+                                                            : "bg-white/5 border-white/5 text-slate-400"
+                                                }`}>
+                                                    <span className={`size-1.5 rounded-full shrink-0 ${isBackendReady ? "bg-primary shadow-[0_0_6px_#39ff14]" : "bg-amber-400 animate-pulse"}`} />
+                                                    <span className="material-symbols-outlined text-xs shrink-0">{isBackendReady ? "check_circle" : "cloud_sync"}</span>
+                                                    <span className="truncate">
+                                                        {language === "th" ? "เซิร์ฟเวอร์" : "Server"}{isBackendReady ? " ✓" : "..."}
                                                     </span>
                                                 </div>
                                             </div>
-                                        </div>
 
-                                        {/* ── 3-Point System Telemetry Status Bar ── */}
-                                        <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-black/40 border border-white/10 text-[10px] md:text-xs font-semibold">
-                                            {/* 1. Camera */}
-                                            <div className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-xl border transition-all ${
-                                                areScriptsLoaded 
-                                                    ? "bg-primary/10 border-primary/30 text-primary" 
-                                                    : "bg-white/5 border-white/5 text-slate-400"
-                                            }`}>
-                                                <span className={`size-1.5 rounded-full shrink-0 ${areScriptsLoaded ? "bg-primary shadow-[0_0_6px_#39ff14]" : "bg-slate-500 animate-pulse"}`} />
-                                                <span className="material-symbols-outlined text-xs shrink-0">{areScriptsLoaded ? "check_circle" : "videocam"}</span>
-                                                <span className="truncate">{language === "th" ? "กล้อง" : "Camera"}{areScriptsLoaded ? " ✓" : "..."}</span>
-                                            </div>
+                                            {/* Subtle server connecting status message if not ready */}
+                                            {!isBackendReady && (
+                                                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200/90 text-[10px] md:text-[11px] leading-tight">
+                                                    <span className="material-symbols-outlined text-xs text-amber-400 shrink-0">info</span>
+                                                    <span className="truncate">
+                                                        {language === "th" 
+                                                            ? "คลาวด์ AI กำลังเชื่อมต่อ (สามารถเริ่มฝึกและนับรอบได้ทันที)" 
+                                                            : "Cloud AI connecting (live pose tracking is ready to start)"}
+                                                    </span>
+                                                </div>
+                                            )}
 
-                                            {/* 2. Pose AI */}
-                                            <div className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-xl border transition-all ${
-                                                isModelReady 
-                                                    ? "bg-primary/10 border-primary/30 text-primary" 
-                                                    : "bg-white/5 border-white/5 text-slate-400"
-                                            }`}>
-                                                <span className={`size-1.5 rounded-full shrink-0 ${isModelReady ? "bg-primary shadow-[0_0_6px_#39ff14]" : "bg-slate-500 animate-pulse"}`} />
-                                                <span className="material-symbols-outlined text-xs shrink-0">{isModelReady ? "check_circle" : "psychology"}</span>
-                                                <span className="truncate">{language === "th" ? "ตรวจจับท่า" : "Pose AI"}{isModelReady ? " ✓" : "..."}</span>
-                                            </div>
-
-                                            {/* 3. AI Server */}
-                                            <div className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-xl border transition-all ${
-                                                isBackendReady 
-                                                    ? "bg-primary/10 border-primary/30 text-primary" 
-                                                    : backendStatus === "waking"
-                                                        ? "bg-amber-500/10 border-amber-500/30 text-amber-300"
-                                                        : "bg-white/5 border-white/5 text-slate-400"
-                                            }`}>
-                                                <span className={`size-1.5 rounded-full shrink-0 ${isBackendReady ? "bg-primary shadow-[0_0_6px_#39ff14]" : "bg-amber-400 animate-pulse"}`} />
-                                                <span className="material-symbols-outlined text-xs shrink-0">{isBackendReady ? "check_circle" : "cloud_sync"}</span>
-                                                <span className="truncate">
-                                                    {language === "th" ? "เซิร์ฟเวอร์" : "Server"}{isBackendReady ? " ✓" : "..."}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        {/* Subtle server connecting status message if not ready */}
-                                        {!isBackendReady && (
-                                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200/90 text-[10px] md:text-[11px] leading-tight">
-                                                <span className="material-symbols-outlined text-xs text-amber-400 shrink-0">info</span>
-                                                <span className="truncate">
-                                                    {language === "th" 
-                                                        ? "คลาวด์ AI กำลังเชื่อมต่อ (สามารถเริ่มฝึกและนับรอบได้ทันที)" 
-                                                        : "Cloud AI connecting (live pose tracking is ready to start)"}
-                                                </span>
-                                            </div>
-                                        )}
-
-                                        {/* Exercise Selector: 3 Segmented Interactive Cards */}
-                                        <div className="flex flex-col gap-1">
-                                            <label className="text-slate-400 text-[10px] md:text-[11px] uppercase tracking-wider font-bold">
-                                                {t.camera.warmup.exerciseLabel}
-                                            </label>
-                                            <div className="grid grid-cols-3 gap-1.5 md:gap-2.5">
-                                                {[
-                                                    { 
-                                                        id: "benchpress", 
-                                                        name: t.camera.exerciseName.benchpress, 
-                                                        icon: "fitness_center", 
-                                                        focus: language === "th" ? "อก • หลังแขน" : "Chest & Arms" 
-                                                    },
-                                                    { 
-                                                        id: "squat", 
-                                                        name: t.camera.exerciseName.squat, 
-                                                        icon: "accessibility_new", 
-                                                        focus: language === "th" ? "ต้นขา • สะโพก" : "Quads & Glutes" 
-                                                    },
-                                                    { 
-                                                        id: "deadlift", 
-                                                        name: t.camera.exerciseName.deadlift, 
-                                                        icon: "sports_gymnastics", 
-                                                        focus: language === "th" ? "หลัง • แฮมสตริง" : "Back & Core" 
-                                                    },
-                                                ].map((item) => {
-                                                    const isSelected = currentExercise === item.id;
-                                                    return (
-                                                        <button
-                                                            key={item.id}
-                                                            type="button"
-                                                            onClick={() => setCurrentExercise(item.id)}
-                                                            className={`flex flex-col items-center justify-center p-2 md:p-3 rounded-2xl border transition-all text-center group cursor-pointer relative touch-manipulation ${
-                                                                isSelected
-                                                                    ? "bg-primary/15 border-primary text-white shadow-[0_0_20px_rgba(57,255,20,0.25)] ring-1 ring-primary/40"
-                                                                    : "bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/[0.08] text-slate-300 active:scale-95"
-                                                            }`}
-                                                        >
-                                                            {isSelected && (
-                                                                <div className="absolute top-1.5 right-1.5 size-1.5 md:size-2 rounded-full bg-primary shadow-[0_0_8px_#39ff14]" />
-                                                            )}
-                                                            <div className={`size-8 md:size-10 rounded-xl flex items-center justify-center mb-1 transition-transform group-hover:scale-110 ${
-                                                                isSelected ? "bg-primary/20 text-primary" : "bg-white/5 text-slate-400 group-hover:text-white"
-                                                            }`}>
+                                            {/* Exercise Selector: 3 Segmented Interactive Cards */}
+                                            <div className="flex flex-col gap-1">
+                                                <label className="text-slate-400 text-[10px] md:text-[11px] uppercase tracking-wider font-bold">
+                                                    {t.camera.warmup.exerciseLabel}
+                                                </label>
+                                                <div className="grid grid-cols-3 gap-1.5 md:gap-2.5">
+                                                    {[
+                                                        { 
+                                                            id: "benchpress", 
+                                                            name: t.camera.exerciseName.benchpress, 
+                                                            icon: "fitness_center", 
+                                                            focus: language === "th" ? "อก • หลังแขน" : "Chest & Arms" 
+                                                        },
+                                                        { 
+                                                            id: "squat", 
+                                                            name: t.camera.exerciseName.squat, 
+                                                            icon: "accessibility_new", 
+                                                            focus: language === "th" ? "ต้นขา • สะโพก" : "Quads & Glutes" 
+                                                        },
+                                                        { 
+                                                            id: "deadlift", 
+                                                            name: t.camera.exerciseName.deadlift, 
+                                                            icon: "sports_gymnastics", 
+                                                            focus: language === "th" ? "หลัง • แฮมสตริง" : "Back & Core" 
+                                                        },
+                                                    ].map((item) => {
+                                                        const isSelected = currentExercise === item.id;
+                                                        return (
+                                                            <button
+                                                                key={item.id}
+                                                                type="button"
+                                                                onClick={() => setCurrentExercise(item.id)}
+                                                                className={`flex flex-col items-center justify-center p-2 md:p-3 rounded-2xl border transition-all text-center group cursor-pointer relative touch-manipulation ${
+                                                                    isSelected
+                                                                        ? "bg-primary/15 border-primary text-white shadow-[0_0_20px_rgba(57,255,20,0.25)] ring-1 ring-primary/40"
+                                                                        : "bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/[0.08] text-slate-300 active:scale-95"
+                                                                }`}
+                                                            >
+                                                                {isSelected && (
+                                                                    <div className="absolute top-1.5 right-1.5 size-1.5 md:size-2 rounded-full bg-primary shadow-[0_0_8px_#39ff14]" />
+                                                                )}
+                                                                <div className={`size-8 md:size-10 rounded-xl flex items-center justify-center mb-1 transition-transform group-hover:scale-110 ${
+                                                                    isSelected ? "bg-primary/20 text-primary" : "bg-white/5 text-slate-400 group-hover:text-white"
+                                                                }`}>
                                                                 <span className="material-symbols-outlined text-xl md:text-2xl">{item.icon}</span>
                                                             </div>
                                                             <span className={`text-[11px] md:text-sm font-black tracking-tight leading-tight ${isSelected ? "text-white" : "text-slate-200"}`}>
@@ -748,7 +806,7 @@ function CameraContent() {
                                         </div>
 
                                         {/* Goal Reps Selector with Presets & Stepper */}
-                                        <div className="flex items-center justify-between gap-2 p-2.5 md:p-3 rounded-2xl bg-white/[0.03] border border-white/10">
+                                        <div className="flex items-center justify-between gap-2 p-2 md:p-2.5 rounded-2xl bg-white/[0.03] border border-white/10">
                                             <div className="flex items-center gap-1.5 md:gap-2">
                                                 <div className="size-7 md:size-8 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
                                                     <span className="material-symbols-outlined text-sm md:text-base">flag</span>
@@ -808,23 +866,9 @@ function CameraContent() {
                                         {/* Main Action Button */}
                                         <button
                                             type="button"
-                                            onClick={() => {
-                                                setCountdown(3); 
-                                                let count = 3;
-                                                const timer = setInterval(() => {
-                                                    count -= 1;
-                                                    if (count > 0) setCountdown(count);
-                                                    else { 
-                                                        clearInterval(timer); 
-                                                        setCountdown(null); 
-                                                        setIsTrackingStarted(true); 
-                                                        isTrackingStartedRef.current = true; 
-                                                        workoutStartTimeRef.current = Date.now(); 
-                                                    }
-                                                }, 1000);
-                                            }}
+                                            onClick={startWorkoutCountdown}
                                             disabled={!isModelReady}
-                                            className={`w-full py-3.5 md:py-4 rounded-2xl text-sm md:text-base font-black uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-2 touch-manipulation ${
+                                            className={`w-full py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-black uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-2 touch-manipulation ${
                                                 isModelReady
                                                     ? "bg-primary text-black hover:shadow-[0_0_30px_rgba(57,255,20,0.5)] hover:scale-[1.01] active:scale-[0.98] cursor-pointer"
                                                     : "bg-white/5 border border-white/10 text-slate-500 cursor-not-allowed"
@@ -841,7 +885,7 @@ function CameraContent() {
                                         </button>
 
                                         {/* Video Upload Fallback */}
-                                        <label className={`w-full py-2 md:py-2.5 rounded-xl text-[11px] md:text-xs font-semibold tracking-wider transition-all flex items-center justify-center gap-2 border touch-manipulation ${
+                                        <label className={`w-full py-1.5 md:py-2 rounded-xl text-[11px] md:text-xs font-semibold tracking-wider transition-all flex items-center justify-center gap-2 border touch-manipulation ${
                                             isModelReady 
                                                 ? "border-white/10 bg-white/5 text-slate-300 hover:text-white hover:bg-white/10 hover:border-white/20 active:scale-98 cursor-pointer" 
                                                 : "border-white/5 text-slate-600 pointer-events-none"
@@ -851,6 +895,7 @@ function CameraContent() {
                                             <input type="file" accept="video/*" className="hidden" onChange={handleVideoUpload} disabled={!isModelReady} />
                                         </label>
                                     </div>
+                                    )}
                                 </div>
                             )}
                         </div>
