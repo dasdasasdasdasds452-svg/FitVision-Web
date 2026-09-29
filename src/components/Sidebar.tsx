@@ -46,24 +46,13 @@ export default function Sidebar() {
             <nav className="hidden md:flex flex-col w-64 border-r border-white/10 bg-surface-darker p-6 justify-between h-screen fixed left-0 top-0 z-50">
                 <div className="flex flex-col gap-8">
                     <div className="flex items-center gap-3">
-                        <div className="size-8 text-primary">
-                            <svg fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                                <g clipPath="url(#clip0_6_535)">
-                                    <path
-                                        clipRule="evenodd"
-                                        d="M47.2426 24L24 47.2426L0.757355 24L24 0.757355L47.2426 24ZM12.2426 21H35.7574L24 9.24264L12.2426 21Z"
-                                        fill="currentColor"
-                                        fillRule="evenodd"
-                                    ></path>
-                                </g>
-                                <defs>
-                                    <clipPath id="clip0_6_535">
-                                        <rect fill="white" height="48" width="48"></rect>
-                                    </clipPath>
-                                </defs>
-                            </svg>
+                        <div className="size-9 rounded-xl bg-gradient-to-br from-primary/25 via-primary/10 to-transparent border border-primary/40 flex items-center justify-center text-primary shadow-[0_0_15px_rgba(57,255,20,0.3)] shrink-0">
+                            <span className="material-symbols-outlined text-xl font-bold">fitness_center</span>
                         </div>
-                        <h2 className="text-white text-xl font-bold tracking-tight">FitVision</h2>
+                        <div className="flex items-center gap-1.5">
+                            <h2 className="text-white text-xl font-black tracking-tight">FitVision</h2>
+                            <span className="text-[9px] font-mono font-bold text-primary px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20">AI</span>
+                        </div>
                     </div>
                     <div className="flex flex-col gap-2">
                         <Link

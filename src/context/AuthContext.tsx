@@ -10,6 +10,7 @@ interface AuthContextType {
     user: User | null;
     logout: () => Promise<void>;
     loginAsDemo: () => void;
+    loginWithEmail: (email: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -23,23 +24,63 @@ const DEMO_USER: User = {
     email: "athlete@fitvision.ai",
 } as User;
 
+function createEmailUser(email: string): User {
+    const cleanEmail = email.trim().toLowerCase();
+    const username = cleanEmail.split("@")[0] || "Athlete";
+    return {
+        id: "user-" + btoa(cleanEmail).replace(/[^a-zA-Z0-9]/g, "").slice(0, 12),
+        app_metadata: {},
+        user_metadata: { name: username },
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+        email: cleanEmail,
+    } as User;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const isLoggedOutInit = typeof window !== "undefined" && localStorage.getItem("fitvision_logged_out") === "true";
+    const savedEmailInit = typeof window !== "undefined" ? localStorage.getItem("fitvision_user_email") : null;
+    
     const [isLoggedIn, setIsLoggedIn] = useState(!isLoggedOutInit);
-    const [user, setUser] = useState<User | null>(isLoggedOutInit ? null : DEMO_USER);
+    const [user, setUser] = useState<User | null>(
+        isLoggedOutInit 
+            ? null 
+            : (savedEmailInit ? createEmailUser(savedEmailInit) : DEMO_USER)
+    );
     const router = useRouter();
     const pathname = usePathname();
 
     const loginAsDemo = () => {
         if (typeof window !== "undefined") {
             localStorage.removeItem("fitvision_logged_out");
+            localStorage.removeItem("fitvision_user_email");
             localStorage.setItem("fitvision_demo_user", "true");
+            localStorage.setItem("fitvision_display_name", "FitVision Athlete");
+            window.dispatchEvent(new Event("profileUpdated"));
         }
         setIsLoggedIn(true);
         setUser(DEMO_USER);
         if (pathname === "/login") {
             router.push("/");
         }
+    };
+
+    const loginWithEmail = (userEmail: string) => {
+        const cleanEmail = userEmail.trim().toLowerCase();
+        const username = cleanEmail.split("@")[0] || "Athlete";
+        const emailUser = createEmailUser(cleanEmail);
+
+        if (typeof window !== "undefined") {
+            localStorage.removeItem("fitvision_logged_out");
+            localStorage.setItem("fitvision_user_email", cleanEmail);
+            localStorage.setItem("fitvision_display_name", username);
+            window.dispatchEvent(new Event("profileUpdated"));
+            window.dispatchEvent(new Event("avatarUpdated"));
+        }
+
+        setIsLoggedIn(true);
+        setUser(emailUser);
+        router.push("/");
     };
 
     useEffect(() => {
@@ -71,15 +112,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     setIsLoggedIn(true);
                     setUser(session.user);
                 } else {
-                    // Default to Demo user so dashboard and all features are immediately accessible
+                    // Default to saved email user if previously logged in with email, otherwise Demo user
+                    const savedEmail = typeof window !== "undefined" ? localStorage.getItem("fitvision_user_email") : null;
                     setIsLoggedIn(true);
-                    setUser(DEMO_USER);
+                    setUser(savedEmail ? createEmailUser(savedEmail) : DEMO_USER);
                 }
             } catch (err) {
                 console.warn("Supabase unreachable/offline, running in Demo mode:", err);
                 if (isMounted) {
+                    const savedEmail = typeof window !== "undefined" ? localStorage.getItem("fitvision_user_email") : null;
                     setIsLoggedIn(true);
-                    setUser(DEMO_USER);
+                    setUser(savedEmail ? createEmailUser(savedEmail) : DEMO_USER);
                 }
             }
         };
@@ -138,7 +181,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ isLoggedIn, user, logout, loginAsDemo }}>
+        <AuthContext.Provider value={{ isLoggedIn, user, logout, loginAsDemo, loginWithEmail }}>
             {children}
         </AuthContext.Provider>
     );

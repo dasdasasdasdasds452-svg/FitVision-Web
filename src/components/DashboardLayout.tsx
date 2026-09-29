@@ -34,16 +34,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <main className={`flex-1 ${hasNoSidebar ? "" : "md:ml-64"} pb-24 md:pb-0`}>
                     {/* Mobile Header */}
                     <header className="md:hidden flex items-center justify-between px-5 py-4 bg-background-dark/80 backdrop-blur-md sticky top-0 z-40 border-b border-white/5">
-                        <div className="flex items-center gap-2 text-primary">
-                            <svg className="size-6" fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                                <path
-                                    clipRule="evenodd"
-                                    d="M47.2426 24L24 47.2426L0.757355 24L24 0.757355L47.2426 24ZM12.2426 21H35.7574L24 9.24264L12.2426 21Z"
-                                    fill="currentColor"
-                                    fillRule="evenodd"
-                                ></path>
-                            </svg>
-                            <h2 className="text-white text-lg font-bold">FitVision</h2>
+                        <div className="flex items-center gap-2.5">
+                            <div className="size-8 rounded-lg bg-gradient-to-br from-primary/25 via-primary/10 to-transparent border border-primary/40 flex items-center justify-center text-primary shadow-[0_0_12px_rgba(57,255,20,0.3)] shrink-0">
+                                <span className="material-symbols-outlined text-lg font-bold">fitness_center</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <h2 className="text-white text-lg font-black tracking-tight">FitVision</h2>
+                                <span className="text-[8px] font-mono font-bold text-primary px-1 py-0.2 rounded bg-primary/10 border border-primary/20">AI</span>
+                            </div>
                         </div>
                         <div className="flex items-center gap-3">
                             <button
