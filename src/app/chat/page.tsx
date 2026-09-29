@@ -17,7 +17,7 @@ interface Message {
 }
 
 export default function ChatPage() {
-    const { t } = useLanguage();
+    const { t, language } = useLanguage();
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
@@ -51,14 +51,6 @@ export default function ChatPage() {
             // ignore storage full
         }
     }, [messages, isHistoryLoaded]);
-
-    // Run entry animations only when there are no messages (empty state)
-    useEffect(() => {
-        if (isHistoryLoaded && messages.length === 0) {
-            
-            
-        }
-    }, [isHistoryLoaded, messages.length]);
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -128,7 +120,8 @@ export default function ChatPage() {
 
     const formatTime = (ts: number) => {
         const d = new Date(ts);
-        return d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+        const locale = language === 'th' ? 'th-TH' : 'en-US';
+        return d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
     };
 
     const formatDateGroup = (ts: number) => {
@@ -138,7 +131,8 @@ export default function ChatPage() {
         yesterday.setDate(yesterday.getDate() - 1);
         if (d.toDateString() === today.toDateString()) return t.chat.today;
         if (d.toDateString() === yesterday.toDateString()) return t.chat.yesterday;
-        return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
+        const locale = language === 'th' ? 'th-TH' : 'en-US';
+        return d.toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' });
     };
 
     // Group messages by date
@@ -157,7 +151,7 @@ export default function ChatPage() {
 
     return (
         <DashboardLayout>
-            <div className="flex flex-col h-[calc(100dvh-64px)] md:h-screen max-w-4xl mx-auto w-full relative">
+            <div className="flex flex-col h-[calc(100dvh-125px)] md:h-screen max-w-4xl mx-auto w-full relative">
 
                 {/* Background ambient glow */}
                 <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -318,6 +312,7 @@ export default function ChatPage() {
                                 onChange={handleTextareaInput}
                                 onKeyDown={handleKeyDown}
                                 placeholder={t.chat.inputPlaceholder}
+                                aria-label={t.chat.inputPlaceholder}
                                 rows={1}
                                 className="w-full bg-surface-dark border border-white/10 focus:border-primary/40 rounded-2xl px-5 py-3.5 pr-12 text-sm text-white placeholder:text-slate-600 outline-none resize-none transition-all focus:shadow-[0_0_15px_rgba(57,255,20,0.08)]"
                                 disabled={isLoading}
@@ -329,6 +324,7 @@ export default function ChatPage() {
                         <button
                             onClick={() => sendMessage()}
                             disabled={!input.trim() || isLoading}
+                            aria-label="Send message"
                             className="h-[48px] w-[48px] rounded-2xl bg-primary text-black flex items-center justify-center shrink-0 disabled:opacity-20 disabled:cursor-not-allowed hover:shadow-[0_0_20px_rgba(57,255,20,0.4)] transition-all active:scale-90"
                         >
                             <span className="material-symbols-outlined text-xl">arrow_upward</span>

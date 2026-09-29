@@ -1,14 +1,17 @@
 "use client";
 import Link from "next/link";
 import React, { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
-type Language = 'en' | 'th';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     const { language, setLanguage, t } = useLanguage();
+    const pathname = usePathname();
     const defaultAvatar = 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuA27nj0lO-CFiCbHV5WY7JdyYn0KZLxAcFyJfVlyHj0s8t2zkyMdrnJdKOFlpT3OeeTkIaYinssvIiwQVZd-PEonFIwPa0-_FQUoPGOdgmCFFxMPIPpveKaTcSIyqLZWjySB7ZZu58OHONYt9rfPco2VI4-bPPW5TsvxabFyx6CrLU-w9Aur278J-pkfDic-F8A-M_pTy88Hs1oo_SyobbHM0vf6Y9bWuieMdksrqbjtj4dqH1_j_Y_XnEUItFA9x07ONGY8FTeK-H6")';
     const [avatar, setAvatar] = useState(defaultAvatar);
     const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+
+    const hasNoSidebar = pathname?.startsWith("/camera") || pathname?.startsWith("/login") || pathname?.startsWith("/tutorial");
 
     useEffect(() => {
         const updateAvatar = () => {
@@ -28,7 +31,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="relative flex min-h-screen w-full flex-col">
             <div className="layout-container flex h-full grow flex-col md:flex-row">
                 {/* Main Content Area */}
-                <main className="flex-1 md:ml-64 pb-24 md:pb-0">
+                <main className={`flex-1 ${hasNoSidebar ? "" : "md:ml-64"} pb-24 md:pb-0`}>
                     {/* Mobile Header */}
                     <header className="md:hidden flex items-center justify-between px-5 py-4 bg-background-dark/80 backdrop-blur-md sticky top-0 z-40 border-b border-white/5">
                         <div className="flex items-center gap-2 text-primary">

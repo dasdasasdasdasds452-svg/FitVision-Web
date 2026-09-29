@@ -52,8 +52,8 @@ function CameraContent() {
     // Dynamic AI State
     const [isGoodForm, setIsGoodForm] = useState(true);
     const isGoodFormRef = useRef(true);
-    const [feedbackTitle, setFeedbackTitle] = useState("AI Ready");
-    const [feedbackDetail, setFeedbackDetail] = useState("Start exercising to get feedback.");
+    const [feedbackTitle, setFeedbackTitle] = useState(t.camera.feedback.aiReady);
+    const [feedbackDetail, setFeedbackDetail] = useState(t.camera.feedback.startExercising);
     const [formScore, setFormScore] = useState(100);
     const [riskLevel, setRiskLevel] = useState<{ level: string; label: string; label_th: string; score: number; color: string; factors: string[]; recommendation: string } | null>(null);
 

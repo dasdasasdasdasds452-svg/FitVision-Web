@@ -1,35 +1,38 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useLanguage } from "@/context/LanguageContext";
 
+interface WorkoutSession {
+  id?: string;
+  exercise: string;
+  avgScore: number;
+  completedReps?: number;
+  repGoal?: number;
+  errorCount?: number;
+  errors?: any[];
+  timestamp: string | number;
+}
+
 export default function Home() {
   const { t } = useLanguage();
+  const router = useRouter();
   const [exercise, setExercise] = useState<"Bench Press" | "Squat" | "Deadlift">("Bench Press");
   const [repGoal, setRepGoal] = useState<number>(12); // Default to 12 reps
-  const [history, setHistory] = useState<any[]>([]);
-
-  // Refs for animated number and bar
-  const accuracyRef = useRef<HTMLSpanElement>(null);
-  const progressBarRef = useRef<HTMLDivElement>(null);
+  const [history, setHistory] = useState<WorkoutSession[]>([]);
 
   useEffect(() => {
-    const stored = JSON.parse(localStorage.getItem('fitvision_history') || '[]');
-    setHistory(stored);
-
-    // Staggered Entrance Animations with Anime.js
-    
-
-    // Athlete Text Animation removed as per user request
-
-    // Animated Number Counter for Accuracy
-    const finalAccuracy = stored.length > 0 ? Math.round(stored.reduce((acc: any, curr: any) => acc + curr.avgScore, 0) / stored.length) : 0;
-    const counter = { accuracy: 0 };
-
-    
-
+    try {
+      const stored = JSON.parse(localStorage.getItem('fitvision_history') || '[]');
+      if (Array.isArray(stored)) {
+        setHistory(stored);
+      }
+    } catch (e) {
+      console.warn("Failed to parse fitvision_history from localStorage", e);
+    }
   }, []);
 
   return (
@@ -157,9 +160,8 @@ export default function Home() {
                 </div>
                 <div className="w-full bg-white/10 h-2 rounded-full overflow-hidden">
                   <div
-                    ref={progressBarRef}
-                    className="bg-primary h-full rounded-full shadow-[0_0_10px_rgba(57,255,20,0.5)]"
-                    style={{ width: '0%' }}
+                    className="bg-primary h-full rounded-full shadow-[0_0_10px_rgba(57,255,20,0.5)] transition-all duration-1000"
+                    style={{ width: `${history.length > 0 ? Math.min(100, Math.round(history.reduce((sum, s) => sum + (s.avgScore || 0), 0) / history.length)) : 0}%` }}
                   ></div>
                 </div>
                 <p className="text-xs text-slate-500 mt-3">{t.dashboard.stats.basedOn.replace('{count}', history.length.toString())}</p>
@@ -194,7 +196,15 @@ export default function Home() {
                 {history.length === 0 ? (
                   <div className="text-slate-400 p-4 border border-white/5 rounded-xl text-center">{t.dashboard.stats.noSessions}</div>
                 ) : history.slice(0, 3).map((session, i) => (
-                  <button onClick={() => { sessionStorage.setItem('fitvision_history_detail_data', JSON.stringify(session)); window.location.href = '/history/detail'; }} key={session.id || i} className="group flex items-center justify-between p-4 bg-surface-dark hover:bg-white/5 border border-white/5 hover:border-primary/30 rounded-xl transition-all cursor-pointer w-full text-left">
+                  <button 
+                    onClick={() => { 
+                      sessionStorage.setItem('fitvision_session_stats', JSON.stringify(session)); 
+                      sessionStorage.setItem('fitvision_errors', JSON.stringify(session.errors || []));
+                      router.push('/summary'); 
+                    }} 
+                    key={session.id || i} 
+                    className="group flex items-center justify-between p-4 bg-surface-dark hover:bg-white/5 border border-white/5 hover:border-primary/30 rounded-xl transition-all cursor-pointer w-full text-left"
+                  >
                     <div className="flex items-center gap-4">
                       <div className="size-12 rounded-lg bg-surface-darker flex items-center justify-center border border-white/10 group-hover:border-primary/50 text-white group-hover:text-primary transition-colors">
                         <span className="material-symbols-outlined">

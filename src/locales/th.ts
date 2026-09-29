@@ -89,6 +89,11 @@ export const th = {
         goalReached: "ถึงเป้าหมายแล้ว!",
         frequentMistakes: "สรุปจุดผิดพลาดที่พบบ่อย",
         deepAnalysis: "วิเคราะห์เชิงลึก",
+        errorTimeline: "ไทม์ไลน์ข้อผิดพลาด",
+        aiAnalysisTitle: "AI วิเคราะห์และแนะนำวิธีแก้ไข",
+        aiAnalyzing: "AI กำลังวิเคราะห์ท่าทางของคุณ...",
+        getAiAdvice: "ขอคำแนะนำจาก AI",
+        repPrefix: "ครั้งที่ #",
         riskLevels: {
             high: "สูง",
             moderate: "ปานกลาง",
@@ -137,7 +142,7 @@ export const th = {
         },
         actions: {
             saveChanges: "บันทึกการเปลี่ยนแปลง",
-            saved: "บันทึกแล้ว",
+            saved: "บันทึกแล้ว!",
             cancel: "ยกเลิก"
         }
     },
@@ -248,6 +253,9 @@ export const th = {
         lowRisk: "ความเสี่ยงต่ำ",
         highRisk: "ความเสี่ยงสูง",
         repetitions: "จำนวนครั้ง",
+        normalSpeed: "ความเร็วปกติ",
+        repTempo: "จังหวะการทำ",
+        repCount: "จำนวนครั้ง",
         warmup: {
             cameraReady: "กล้อง ✓",
             cameraLoading: "กล้อง...",
@@ -342,7 +350,9 @@ export const th = {
         signInToggle: "เข้าสู่ระบบ",
         processing: "กำลังประมวลผล...",
         signUp: "สมัครสมาชิก",
-        signUpSuccess: "สมัครสมาชิกสำเร็จ! คุณสามารถเข้าสู่ระบบได้แล้ว"
+        signUpSuccess: "สมัครสมาชิกสำเร็จ! คุณสามารถเข้าสู่ระบบได้แล้ว",
+        oauthComingSoon: "เร็วๆ นี้!",
+        demoMode: "เข้าใช้งานทันที (Demo / Guest Mode)"
     },
     notifications: {
         title: "การแจ้งเตือน",
@@ -351,5 +361,29 @@ export const th = {
         hoursAgo: "2 ชั่วโมงที่แล้ว",
         systemUpdate: "มีอัปเดตระบบ v2.1",
         yesterday: "เมื่อวาน"
+    },
+    detail: {
+        loadingAnalysis: "กำลังโหลดผลวิเคราะห์...",
+        noDataTitle: "ไม่พบข้อมูลการวิเคราะห์",
+        noDataDesc: "เลือกคลิปข้อผิดพลาดจากหน้าสรุปผลหรือประวัติเพื่อดูการวิเคราะห์โดยละเอียด",
+        goToHistory: "ไปที่ประวัติ",
+        back: "กลับ",
+        autoCaptured: "ภาพสแนปชอตข้อผิดพลาดอัตโนมัติ",
+        export: "ส่งออก",
+        aiAnalysis: "วิเคราะห์ด้วย Gemini AI",
+        severity: "ระดับความรุนแรง",
+        timestamp: "เวลาที่เกิด",
+        analyzingForm: "Gemini AI กำลังวิเคราะห์ฟอร์มของคุณ...",
+        aiFailed: "การวิเคราะห์ด้วย AI ล้มเหลว",
+        retry: "ลองใหม่",
+        generatingCorrections: "กำลังสร้างคำแนะนำแก้ไข...",
+        aiCorrections: "คำแนะนำแก้ไขจาก AI",
+        warmupRecommendation: "คำแนะนำการอบอุ่นร่างกาย",
+        loadingSuggestion: "กำลังโหลดคำแนะนำ...",
+        warmupFallback: "ควรวอร์มอัพก่อนยกน้ำหนักหนักเสมอ การยืดเหยียดแบบเคลื่อนไหวและท่ากระตุ้นกล้ามเนื้อช่วยป้องกันฟอร์มพังได้",
+        aiCoachNote: "บันทึกจากโค้ช AI",
+        generatingInsights: "กำลังสร้างข้อมูลเชิงลึก...",
+        rerunAnalysis: "วิเคราะห์อีกครั้ง",
+        analyzing: "กำลังวิเคราะห์..."
     }
 };

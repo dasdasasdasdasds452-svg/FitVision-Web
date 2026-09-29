@@ -89,6 +89,11 @@ export const en = {
         goalReached: "GOAL REACHED!",
         frequentMistakes: "Frequent Mistakes Breakdown",
         deepAnalysis: "Deep Analysis",
+        errorTimeline: "Error Timeline",
+        aiAnalysisTitle: "AI Analysis & Correction Advice",
+        aiAnalyzing: "AI is analyzing your form...",
+        getAiAdvice: "Get AI Advice",
+        repPrefix: "Rep #",
         riskLevels: {
             high: "High",
             moderate: "Moderate",
@@ -137,7 +142,7 @@ export const en = {
         },
         actions: {
             saveChanges: "Save Changes",
-            saved: "SAVED",
+            saved: "Saved!",
             cancel: "Cancel"
         }
     },
@@ -248,6 +253,9 @@ export const en = {
         lowRisk: "Low Risk",
         highRisk: "High Risk",
         repetitions: "Repetitions",
+        normalSpeed: "Normal Speed",
+        repTempo: "Rep Tempo",
+        repCount: "Repetitions",
         warmup: {
             cameraReady: "Camera ✓",
             cameraLoading: "Camera...",
@@ -342,7 +350,9 @@ export const en = {
         signInToggle: "Sign In",
         processing: "PROCESSING...",
         signUp: "SIGN UP",
-        signUpSuccess: "Sign up successful! You can now log in."
+        signUpSuccess: "Sign up successful! You can now log in.",
+        oauthComingSoon: "Coming soon!",
+        demoMode: "Enter Immediately (Demo / Guest Mode)"
     },
     notifications: {
         title: "Notifications",
@@ -351,5 +361,29 @@ export const en = {
         hoursAgo: "2 hours ago",
         systemUpdate: "System update v2.1 is available.",
         yesterday: "Yesterday"
+    },
+    detail: {
+        loadingAnalysis: "Loading Analysis...",
+        noDataTitle: "No Analysis Data Found",
+        noDataDesc: "Select a specific error clip from the Summary or History page to view its detailed analysis.",
+        goToHistory: "Go to History",
+        back: "Back",
+        autoCaptured: "Auto-captured error snapshot",
+        export: "Export",
+        aiAnalysis: "Gemini AI Analysis",
+        severity: "Severity",
+        timestamp: "Timestamp",
+        analyzingForm: "Gemini AI is analyzing your form...",
+        aiFailed: "AI Analysis failed",
+        retry: "Retry",
+        generatingCorrections: "Generating Corrections...",
+        aiCorrections: "AI-Generated Corrections",
+        warmupRecommendation: "Warm-up Recommendation",
+        loadingSuggestion: "Loading suggestion...",
+        warmupFallback: "Always warm up before heavy lifts. Dynamic stretching and activation exercises can help prevent form breakdown.",
+        aiCoachNote: "AI Coach Note",
+        generatingInsights: "Generating insights...",
+        rerunAnalysis: "Re-run Analysis",
+        analyzing: "Analyzing..."
     }
 };

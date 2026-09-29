@@ -31,12 +31,6 @@ export default function HistoryPage() {
         return history.filter(s => s.exercise?.toLowerCase() === filter.toLowerCase());
     }, [history, filter]);
 
-    // Run animation AFTER React has rendered elements (triggered by data/filter changes)
-    useEffect(() => {
-        requestAnimationFrame(() => {
-            
-        });
-    }, [filteredSessions]);
 
     // Build dynamic chart points from recent sessions (up to 10)
     const chartData = useMemo(() => {
@@ -110,7 +104,7 @@ export default function HistoryPage() {
                                         : "bg-white/5 border border-white/10 text-slate-300 hover:border-primary/40 hover:text-white"
                                         }`}
                                 >
-                                    {f === "all" ? t.history.filters.all : f}
+                                    {f === "all" ? t.history.filters.all : f === "Bench Press" ? t.dashboard.exerciseSelection.benchPress : f === "Squat" ? t.dashboard.exerciseSelection.squat : t.dashboard.exerciseSelection.deadlift}
                                 </button>
                             ))}
                         </div>

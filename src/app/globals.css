@@ -257,3 +257,64 @@
 .animate-fade-in-up:nth-child(3) { animation-delay: 0.3s; }
 .animate-fade-in-up:nth-child(4) { animation-delay: 0.4s; }
 .animate-fade-in-up:nth-child(5) { animation-delay: 0.5s; }
+
+/* Missing animations across pages */
+.animate-fade-up {
+    animation: fadeInUp 0.5s ease-out forwards;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-slide-up {
+    animation: slideUp 0.4s ease-out forwards;
+}
+
+.animate-stagger-summary,
+.animate-stagger-history,
+.animate-stagger-replay,
+.animate-stagger-tutorial {
+    animation: fadeInUp 0.5s ease-out forwards;
+}
+
+.animate-chat-in {
+    animation: fadeInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes glowPulse {
+    0%, 100% {
+        box-shadow: 0 0 15px rgba(57, 255, 20, 0.2);
+    }
+    50% {
+        box-shadow: 0 0 30px rgba(57, 255, 20, 0.45);
+    }
+}
+
+.animate-glow-pulse {
+    animation: glowPulse 3s ease-in-out infinite;
+}
+
+@keyframes wave {
+    0%, 100% {
+        transform: rotate(0deg);
+    }
+    20%, 60% {
+        transform: rotate(14deg);
+    }
+    40%, 80% {
+        transform: rotate(-14deg);
+    }
+}
+
+/* Safe area padding for mobile nav */
+.pb-safe {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
+}

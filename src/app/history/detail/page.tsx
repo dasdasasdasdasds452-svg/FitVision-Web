@@ -15,7 +15,7 @@ interface AIAnalysis {
 
 export default function ErrorReplayPage() {
     const router = useRouter();
-    const { language } = useLanguage();
+    const { language, t } = useLanguage();
     const [errorData, setErrorData] = useState<{ url: string; title: string; detail: string; time: string; exercise?: string } | null>(null);
     const [hasChecked, setHasChecked] = useState(false);
     const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null);
@@ -80,7 +80,7 @@ export default function ErrorReplayPage() {
             <DashboardLayout>
                 <div className="flex-1 max-w-5xl mx-auto w-full px-5 py-20 flex flex-col items-center justify-center text-center">
                     <span className="material-symbols-outlined text-6xl text-slate-700 mb-4 animate-pulse">hourglass_empty</span>
-                    <h2 className="text-xl font-bold text-slate-300">Loading Analysis...</h2>
+                    <h2 className="text-xl font-bold text-slate-300">{t.detail.loadingAnalysis}</h2>
                 </div>
             </DashboardLayout>
         );
@@ -94,10 +94,10 @@ export default function ErrorReplayPage() {
                     <div className="w-20 h-20 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
                         <span className="material-symbols-outlined text-4xl text-red-400">search_off</span>
                     </div>
-                    <h2 className="text-2xl font-bold text-white">No Analysis Data Found</h2>
-                    <p className="text-slate-400 max-w-sm text-sm">Select a specific error clip from the Summary or History page to view its detailed analysis.</p>
+                    <h2 className="text-2xl font-bold text-white">{t.detail.noDataTitle}</h2>
+                    <p className="text-slate-400 max-w-sm text-sm">{t.detail.noDataDesc}</p>
                     <button onClick={() => router.push('/history')} className="mt-4 bg-primary text-black font-bold px-6 py-3 rounded-xl hover:shadow-[0_0_20px_rgba(57,255,20,0.4)] transition-all active:scale-95">
-                        Go to History
+                        {t.detail.goToHistory}
                     </button>
                 </div>
             </DashboardLayout>
@@ -114,7 +114,7 @@ export default function ErrorReplayPage() {
                 <div className="flex items-center gap-2 mb-6 animate-stagger-replay">
                     <button onClick={() => router.back()} className="flex items-center gap-1.5 text-slate-400 hover:text-primary transition-colors text-sm font-medium group">
                         <span className="material-symbols-outlined text-lg group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
-                        Back
+                        {t.detail.back}
                     </button>
                     <span className="text-slate-700 text-xs">/</span>
                     <span className="text-white text-sm font-medium truncate">{errorData.title}</span>
@@ -136,7 +136,7 @@ export default function ErrorReplayPage() {
                         <div className="px-5 py-3 border-t border-white/5 flex items-center justify-between">
                             <span className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
                                 <span className="material-symbols-outlined text-sm text-slate-600">videocam</span>
-                                Auto-captured error snapshot
+                                {t.detail.autoCaptured}
                             </span>
                             <button
                                 onClick={() => {
@@ -150,7 +150,7 @@ export default function ErrorReplayPage() {
                                 className="text-xs text-slate-400 hover:text-primary font-medium flex items-center gap-1 transition-colors"
                             >
                                 <span className="material-symbols-outlined text-sm">download</span>
-                                Export
+                                {t.detail.export}
                             </button>
                         </div>
                     </div>
@@ -167,18 +167,18 @@ export default function ErrorReplayPage() {
                             <div>
                                 <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest flex items-center gap-1">
                                     <span className="material-symbols-outlined text-xs">auto_awesome</span>
-                                    Gemini AI Analysis
+                                    {t.detail.aiAnalysis}
                                 </p>
                                 <h2 className="text-lg font-bold text-white">{errorData.title}</h2>
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
                             <div className={`text-center px-3 py-1.5 rounded-lg ${severity.bg} border ${severity.border}`}>
-                                <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Severity</p>
-                                <p className={`text-sm font-bold capitalize ${severity.text}`}>{aiAnalysis?.severity || 'Analyzing...'}</p>
+                                <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">{t.detail.severity}</p>
+                                <p className={`text-sm font-bold capitalize ${severity.text}`}>{aiAnalysis?.severity || t.detail.analyzing}</p>
                             </div>
                             <div className="text-center px-3 py-1.5 rounded-lg bg-white/5 border border-white/5">
-                                <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Timestamp</p>
+                                <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">{t.detail.timestamp}</p>
                                 <p className="text-sm font-bold text-white">{errorData.time}</p>
                             </div>
                         </div>
@@ -189,16 +189,16 @@ export default function ErrorReplayPage() {
                         {isAnalyzing ? (
                             <div className="flex items-center gap-3 py-2">
                                 <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div>
-                                <span className="text-sm text-slate-400">Gemini AI is analyzing your form...</span>
+                                <span className="text-sm text-slate-400">{t.detail.analyzingForm}</span>
                             </div>
                         ) : aiError ? (
                             <div className="flex items-center gap-3 py-2">
                                 <span className="material-symbols-outlined text-red-400 text-lg">warning</span>
                                 <div>
-                                    <p className="text-sm text-red-400 font-medium">AI Analysis failed</p>
+                                    <p className="text-sm text-red-400 font-medium">{t.detail.aiFailed}</p>
                                     <p className="text-xs text-slate-500">{aiError}</p>
                                 </div>
-                                <button onClick={() => fetchAIAnalysis(errorData)} className="ml-auto text-xs text-primary font-medium hover:underline">Retry</button>
+                                <button onClick={() => fetchAIAnalysis(errorData)} className="ml-auto text-xs text-primary font-medium hover:underline">{t.detail.retry}</button>
                             </div>
                         ) : aiAnalysis ? (
                             <p className="text-slate-300 text-sm leading-relaxed border-l-2 border-primary/40 pl-4">
@@ -215,7 +215,7 @@ export default function ErrorReplayPage() {
                     <div className="px-5 md:px-6 pb-6">
                         <p className="text-xs text-slate-500 uppercase tracking-wider font-bold mb-3 flex items-center gap-1.5">
                             <span className="material-symbols-outlined text-sm text-primary">lightbulb</span>
-                            {isAnalyzing ? 'Generating Corrections...' : 'AI-Generated Corrections'}
+                            {isAnalyzing ? t.detail.generatingCorrections : t.detail.aiCorrections}
                         </p>
                         {isAnalyzing ? (
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -255,12 +255,12 @@ export default function ErrorReplayPage() {
                     <div className="bg-surface-dark rounded-2xl border border-white/5 p-5">
                         <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
                             <span className="material-symbols-outlined text-orange-400 text-lg">local_fire_department</span>
-                            Warm-up Recommendation
+                            {t.detail.warmupRecommendation}
                         </h3>
                         {isAnalyzing ? (
                             <div className="flex items-center gap-3">
                                 <div className="w-4 h-4 border-2 border-orange-400/30 border-t-orange-400 rounded-full animate-spin"></div>
-                                <span className="text-xs text-slate-500">Loading suggestion...</span>
+                                <span className="text-xs text-slate-500">{t.detail.loadingSuggestion}</span>
                             </div>
                         ) : (
                             <div className="flex gap-3">
@@ -268,7 +268,7 @@ export default function ErrorReplayPage() {
                                     <span className="material-symbols-outlined text-orange-400 text-sm">exercise</span>
                                 </div>
                                 <p className="text-xs text-slate-400 leading-relaxed">
-                                    {aiAnalysis?.warmupTip || "Always warm up before heavy lifts. Dynamic stretching and activation exercises can help prevent form breakdown."}
+                                    {aiAnalysis?.warmupTip || t.detail.warmupFallback}
                                 </p>
                             </div>
                         )}
@@ -278,12 +278,12 @@ export default function ErrorReplayPage() {
                     <div className="bg-surface-dark rounded-2xl border border-white/5 p-5">
                         <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
                             <span className="material-symbols-outlined text-primary text-lg">smart_toy</span>
-                            AI Coach Note
+                            {t.detail.aiCoachNote}
                         </h3>
                         {isAnalyzing ? (
                             <div className="flex items-center gap-3">
                                 <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div>
-                                <span className="text-xs text-slate-500">Generating insights...</span>
+                                <span className="text-xs text-slate-500">{t.detail.generatingInsights}</span>
                             </div>
                         ) : (
                             <div className="flex gap-3">
@@ -305,7 +305,7 @@ export default function ErrorReplayPage() {
                         className="bg-primary text-black font-bold py-3 px-8 rounded-xl flex items-center gap-2 hover:shadow-[0_0_25px_rgba(57,255,20,0.5)] transition-all active:scale-95"
                     >
                         <span className="material-symbols-outlined">restart_alt</span>
-                        Re-run Analysis
+                        {t.detail.rerunAnalysis}
                     </button>
                 </div>
             </div>

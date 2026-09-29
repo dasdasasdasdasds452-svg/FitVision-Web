@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { useLanguage } from "@/context/LanguageContext";
 
 interface RiskLevelData {
     level: string;
@@ -26,8 +27,13 @@ export interface CameraOverlayProps {
 
 export function CameraMobileHUD({ props }: { props: CameraOverlayProps }) {
     const { t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, currentReps, repGoal, endWorkoutData, riskLevel } = props;
+    const { language } = useLanguage();
     
     if (!isTrackingStarted) return null;
+    
+    const mobileRiskLabel = riskLevel 
+        ? (language === "th" ? riskLevel.label_th : (riskLevel.label || riskLevel.label_th))
+        : "";
     
     return (
         <div className="lg:hidden relative z-20 mt-auto p-3 pb-4">
@@ -47,7 +53,7 @@ export function CameraMobileHUD({ props }: { props: CameraOverlayProps }) {
                         {riskLevel && (
                             <div className="flex items-center gap-1 mt-1">
                                 <span className="material-symbols-outlined text-xs" style={{ color: riskLevel.color }}>health_and_safety</span>
-                                <span className="text-[10px] font-bold" style={{ color: riskLevel.color }}>{riskLevel.label_th}</span>
+                                <span className="text-[10px] font-bold" style={{ color: riskLevel.color }}>{mobileRiskLabel}</span>
                             </div>
                         )}
                     </div>
@@ -68,11 +74,14 @@ export function CameraMobileHUD({ props }: { props: CameraOverlayProps }) {
 
 export function CameraDesktopPanel({ props }: { props: CameraOverlayProps }) {
     const { t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, currentReps, repGoal, exerciseName, endWorkoutData, riskLevel } = props;
+    const { language } = useLanguage();
     
     if (!isTrackingStarted) return null;
 
     // Derive risk display from API data or fall back to form-based
-    const riskLabel = riskLevel ? riskLevel.label_th : (isGoodForm ? t.camera.lowRisk : t.camera.highRisk);
+    const riskLabel = riskLevel 
+        ? (language === "th" ? riskLevel.label_th : (riskLevel.label || riskLevel.label_th))
+        : (isGoodForm ? t.camera.lowRisk : t.camera.highRisk);
     const riskColor = riskLevel ? riskLevel.color : (isGoodForm ? "#22c55e" : "#f97316");
     const riskIcon = riskLevel
         ? (riskLevel.level === "low" ? "verified_user" : riskLevel.level === "critical" ? "emergency" : "health_and_safety")

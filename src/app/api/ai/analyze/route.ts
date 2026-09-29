@@ -14,10 +14,44 @@ export async function POST(request: NextRequest) {
     // ── Input validation ────────────────────────────────────────────────────
     try {
         const body = await request.json();
-        const { errorTitle, errorDetail, exercise, timestamp, language } = body;
+        const { errorTitle, errorDetail, exercise, timestamp, language, question, errors, score } = body;
 
+        const openai = new OpenAI({
+            apiKey: process.env.AI_API_KEY,
+            baseURL: process.env.AI_BASE_URL,
+        });
+
+        // Mode 1: Summary batch analysis (from summary page)
+        if (question && typeof question === "string") {
+            const summarySystemPrompt = `You are FitVision AI Coach — a world-class biomechanics and fitness expert.
+Provide comprehensive, practical, and science-backed feedback on the user's workout session.
+Write your response in ${language === "th" ? "Thai" : "English"}.
+Use clean Markdown formatting with bullet points and bold headers.`;
+
+            const response = await openai.chat.completions.create({
+                model: process.env.AI_MODEL || "gemini-2.5-flash-lite",
+                messages: [
+                    { role: "system", content: summarySystemPrompt },
+                    { role: "user", content: question },
+                ],
+                stream: false,
+            });
+
+            const content = response.choices[0]?.message?.content || "";
+            return NextResponse.json({
+                response: content,
+                answer: content,
+                message: content,
+            }, {
+                headers: {
+                    "X-RateLimit-Remaining": String(limiter?.remaining || 0),
+                },
+            });
+        }
+
+        // Mode 2: Single error detail analysis (from history detail page)
         if (!errorTitle || typeof errorTitle !== "string") {
-            return NextResponse.json({ error: "Missing errorTitle" }, { status: 400 });
+            return NextResponse.json({ error: "Missing errorTitle or question" }, { status: 400 });
         }
         if (errorTitle.length > MAX_INPUT_LENGTH) {
             return NextResponse.json(
@@ -31,12 +65,6 @@ export async function POST(request: NextRequest) {
                 { status: 400 }
             );
         }
-
-        // ── AI call ─────────────────────────────────────────────────────────
-        const openai = new OpenAI({
-            apiKey: process.env.AI_API_KEY,
-            baseURL: process.env.AI_BASE_URL,
-        });
 
         const systemPrompt = `You are FitVision AI Coach — a world-class biomechanics and fitness expert. You analyze exercise form errors detected by AI pose estimation.
 

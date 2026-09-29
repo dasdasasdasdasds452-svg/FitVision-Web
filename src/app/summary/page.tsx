@@ -182,7 +182,7 @@ ${errorSummary}
                         <div className="bg-surface-dark border border-white/10 rounded-2xl p-6 animate-stagger-summary">
                             <h3 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
                                 <span className="material-symbols-outlined text-orange-400">timeline</span>
-                                {language === 'th' ? 'ไทม์ไลน์ข้อผิดพลาด' : 'Error Timeline'}
+                                {t.summary.errorTimeline}
                             </h3>
                             <div className="relative">
                                 {/* Timeline line */}
@@ -202,7 +202,7 @@ ${errorSummary}
                                                     {/* Rep badge */}
                                                     {error.repNumber !== undefined && error.repNumber > 0 && (
                                                         <span className="text-xs font-bold text-slate-400 bg-white/5 px-2 py-0.5 rounded border border-white/10">
-                                                            Rep #{error.repNumber}
+                                                            {t.summary.repPrefix}{error.repNumber}
                                                         </span>
                                                     )}
                                                     {/* Risk badge */}
@@ -253,12 +253,12 @@ ${errorSummary}
                         <div className="bg-gradient-to-br from-purple-500/10 to-blue-500/10 border border-purple-500/20 rounded-2xl p-6 animate-stagger-summary">
                             <h3 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
                                 <span className="material-symbols-outlined text-purple-400">psychology</span>
-                                {language === 'th' ? 'AI วิเคราะห์และแนะนำวิธีแก้ไข' : 'AI Analysis & Correction Advice'}
+                                {t.summary.aiAnalysisTitle}
                             </h3>
                             {isLoadingAI ? (
                                 <div className="flex items-center gap-3 py-8 justify-center">
                                     <div className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
-                                    <span className="text-sm text-purple-300">{language === 'th' ? 'AI กำลังวิเคราะห์ท่าทางของคุณ...' : 'AI is analyzing your form...'}</span>
+                                    <span className="text-sm text-purple-300">{t.summary.aiAnalyzing}</span>
                                 </div>
                             ) : aiAdvice ? (
                                 <div className="prose prose-invert prose-sm max-w-none">
@@ -273,7 +273,7 @@ ${errorSummary}
                                         className="bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 px-6 py-3 rounded-xl font-bold text-sm transition-all flex items-center gap-2 mx-auto"
                                     >
                                         <span className="material-symbols-outlined text-base">auto_awesome</span>
-                                        {language === 'th' ? 'ขอคำแนะนำจาก AI' : 'Get AI Advice'}
+                                        {t.summary.getAiAdvice}
                                     </button>
                                 </div>
                             )}

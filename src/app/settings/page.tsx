@@ -13,6 +13,10 @@ export default function SettingsPage() {
     const [height, setHeight] = useState("185");
     const [weight, setWeight] = useState("82");
 
+    const [voiceFeedback, setVoiceFeedback] = useState(true);
+    const [autoSave, setAutoSave] = useState(true);
+    const [countdown, setCountdown] = useState(true);
+
     // Check if saving is showing feedback
     const [showSavedFeedback, setShowSavedFeedback] = useState(false);
 
@@ -31,8 +35,14 @@ export default function SettingsPage() {
         const storedWeight = localStorage.getItem('fitvision_weight');
         if (storedWeight) setWeight(storedWeight);
 
-        // Entrance animation
-        
+        const storedVoice = localStorage.getItem('fitvision_voice_feedback');
+        if (storedVoice !== null) setVoiceFeedback(storedVoice === 'true');
+
+        const storedAutoSave = localStorage.getItem('fitvision_auto_save');
+        if (storedAutoSave !== null) setAutoSave(storedAutoSave === 'true');
+
+        const storedCountdown = localStorage.getItem('fitvision_countdown');
+        if (storedCountdown !== null) setCountdown(storedCountdown === 'true');
     }, []);
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,7 +101,7 @@ export default function SettingsPage() {
                                         title="User avatar"
                                         style={{ backgroundImage: `url('${profileImage}')` }}>
                                     </div>
-                                    <div className="absolute inset-0 bg-[#12230f]/60 rounded-full group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                    <div className="absolute inset-0 bg-[#12230f]/60 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                                         <span className="material-symbols-outlined text-primary">edit</span>
                                     </div>
                                 </div>
@@ -153,7 +163,15 @@ export default function SettingsPage() {
                                         <p className="text-slate-400 text-sm">{t.settings.aiPreferences.voice.desc}</p>
                                     </div>
                                     <label className="relative inline-flex items-center cursor-pointer">
-                                        <input defaultChecked className="sr-only peer" type="checkbox" />
+                                        <input 
+                                            checked={voiceFeedback} 
+                                            onChange={(e) => {
+                                                setVoiceFeedback(e.target.checked);
+                                                localStorage.setItem('fitvision_voice_feedback', String(e.target.checked));
+                                            }}
+                                            className="sr-only peer" 
+                                            type="checkbox" 
+                                        />
                                         <div className="w-12 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                                     </label>
                                 </div>
@@ -164,7 +182,15 @@ export default function SettingsPage() {
                                         <p className="text-slate-400 text-sm">{t.settings.aiPreferences.autoSave.desc}</p>
                                     </div>
                                     <label className="relative inline-flex items-center cursor-pointer">
-                                        <input defaultChecked className="sr-only peer" type="checkbox" />
+                                        <input 
+                                            checked={autoSave}
+                                            onChange={(e) => {
+                                                setAutoSave(e.target.checked);
+                                                localStorage.setItem('fitvision_auto_save', String(e.target.checked));
+                                            }}
+                                            className="sr-only peer" 
+                                            type="checkbox" 
+                                        />
                                         <div className="w-12 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                                     </label>
                                 </div>
@@ -175,7 +201,15 @@ export default function SettingsPage() {
                                         <p className="text-slate-400 text-sm">{t.settings.aiPreferences.countdown.desc}</p>
                                     </div>
                                     <label className="relative inline-flex items-center cursor-pointer">
-                                        <input defaultChecked className="sr-only peer" type="checkbox" />
+                                        <input 
+                                            checked={countdown}
+                                            onChange={(e) => {
+                                                setCountdown(e.target.checked);
+                                                localStorage.setItem('fitvision_countdown', String(e.target.checked));
+                                            }}
+                                            className="sr-only peer" 
+                                            type="checkbox" 
+                                        />
                                         <div className="w-12 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                                     </label>
                                 </div>
@@ -190,7 +224,7 @@ export default function SettingsPage() {
                                 {showSavedFeedback ? (
                                     <div className="flex items-center justify-center gap-2">
                                         <span className="material-symbols-outlined text-sm">check</span>
-                                        SAVED
+                                        {t.settings.actions.saved}
                                     </div>
                                 ) : (
                                     t.settings.actions.saveChanges
