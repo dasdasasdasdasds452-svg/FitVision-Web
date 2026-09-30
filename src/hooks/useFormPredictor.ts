@@ -3,7 +3,7 @@ import type { ExerciseType, PredictionResult, FormFeedback } from "@/types/worko
 import type { Landmark } from "@/lib/poseUtils";
 import { calculateAngle } from "@/lib/poseUtils";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://grubby-lynnett-tonkla1-ded4b5e9.koyeb.app";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://fitvision-backend-production-a307.up.railway.app";
 
 interface UseFormPredictorReturn {
     feedback: FormFeedback;

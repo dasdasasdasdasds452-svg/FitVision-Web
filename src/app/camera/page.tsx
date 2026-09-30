@@ -83,7 +83,7 @@ function CameraContent() {
 
     // Ping Render backend until it wakes up
     useEffect(() => {
-        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://grubby-lynnett-tonkla1-ded4b5e9.koyeb.app";
+        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://fitvision-backend-production-a307.up.railway.app";
         let attempts = 0;
         let stopped = false;
 
@@ -321,7 +321,7 @@ function CameraContent() {
                     if (frameCount % 5 === 0 && !isPredicting && isTrackingStartedRef.current) {
                         isPredicting = true;
 
-                        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://grubby-lynnett-tonkla1-ded4b5e9.koyeb.app";
+                        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://fitvision-backend-production-a307.up.railway.app";
 
                         (async () => {
                             try {
