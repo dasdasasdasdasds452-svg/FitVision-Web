@@ -20,6 +20,12 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: validationError }, { status: 400 });
         }
 
+        // Only user/assistant turns may come from the browser — never "system".
+        const safeMessages = (messages as { role: unknown; content: string }[]).map((m) => ({
+            role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
+            content: m.content,
+        }));
+
         // ── AI call ─────────────────────────────────────────────────────────
         const openai = new OpenAI({
             apiKey: process.env.AI_API_KEY,
@@ -49,7 +55,7 @@ Rules:
 
         const response = await openai.chat.completions.create({
             model: process.env.AI_MODEL || "gemini-2.5-flash-lite",
-            messages: [systemMessage, ...messages],
+            messages: [systemMessage, ...safeMessages],
             stream: false,
         });
 

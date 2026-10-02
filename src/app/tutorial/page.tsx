@@ -1,244 +1,147 @@
 "use client";
-
-import React, { useEffect } from "react";
+import React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useLanguage } from "@/context/LanguageContext";
 
+/** Top-down sketch: lifter in the middle, phone off to the side at 2–3 m. */
+function SetupDiagram({ correct, label }: { correct: boolean; label: string }) {
+    const stroke = correct ? "#39FF14" : "#FDBA74";
+    return (
+        <svg viewBox="0 0 320 180" role="img" aria-label={label} className="w-full h-auto">
+            <rect x="0" y="0" width="320" height="180" rx="16" fill="rgba(255,255,255,0.03)" />
+            {/* lifter, facing right (shoulders as an ellipse, head as a circle) */}
+            <ellipse cx="200" cy="90" rx="16" ry="34" fill="none" stroke="#E2E8F0" strokeWidth="2" />
+            <circle cx="214" cy="90" r="10" fill="none" stroke="#E2E8F0" strokeWidth="2" />
+            <path d="M226 90 l10 0" stroke="#E2E8F0" strokeWidth="2" strokeLinecap="round" />
+            {correct ? (
+                <>
+                    {/* phone below the lifter = side view */}
+                    <rect x="188" y="150" width="24" height="14" rx="3" fill="none" stroke={stroke} strokeWidth="2" />
+                    <path d="M200 148 L200 128" stroke={stroke} strokeWidth="2" strokeDasharray="4 4" />
+                    <path d="M188 150 L170 124 M212 150 L230 124" stroke={stroke} strokeWidth="1.5" opacity="0.6" />
+                    <text x="160" y="146" textAnchor="end" fill={stroke} fontSize="13" fontFamily="inherit">2–3 m · 90°</text>
+                </>
+            ) : (
+                <>
+                    {/* phone right in front, too close */}
+                    <rect x="246" y="83" width="14" height="24" rx="3" fill="none" stroke={stroke} strokeWidth="2" />
+                    <path d="M244 95 L238 95" stroke={stroke} strokeWidth="2" strokeDasharray="3 3" />
+                    <text x="214" y="40" fill={stroke} fontSize="13" fontFamily="inherit">&lt; 1 m · 0°</text>
+                </>
+            )}
+        </svg>
+    );
+}
+
 export default function TutorialPage() {
-    const router = useRouter();
     const { t } = useLanguage();
+    const tt = t.tutorial;
 
-    useEffect(() => {
-        // Staggered fade in animation
-        
-    }, []);
-
-    const handleLaunchCamera = () => {
-        router.push("/camera");
-    };
+    const steps = [
+        { icon: "straighten", ...tt.steps.distance },
+        { icon: "360", ...tt.steps.angle },
+        { icon: "wb_sunny", ...tt.steps.lighting },
+    ];
+    const exercises = [
+        { key: "squat", name: t.camera.exerciseName.squat, points: tt.capabilities.squat.points },
+        { key: "deadlift", name: t.camera.exerciseName.deadlift, points: tt.capabilities.deadlift.points },
+        { key: "benchpress", name: t.camera.exerciseName.benchpress, points: tt.capabilities.benchpress.points },
+    ];
 
     return (
         <DashboardLayout>
-            <div className="relative overflow-x-hidden font-display min-h-screen">
-                {/* Background Glow Effects */}
-                <div className="fixed top-0 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-[120px] -z-10 pointer-events-none"></div>
-                <div className="fixed bottom-0 right-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px] -z-10 pointer-events-none"></div>
+            <div className="max-w-5xl mx-auto w-full px-4 md:px-8 py-6 flex flex-col gap-8 pb-16">
+                <header>
+                    <h1 className="text-2xl md:text-3xl font-semibold text-white">{tt.page.title}</h1>
+                    <p className="text-slate-300 mt-1 max-w-2xl">{tt.page.subtitle}</p>
+                </header>
 
-                <main className="max-w-6xl mx-auto px-6 py-12 w-full">
-                    {/* Hero Section */}
-                    <div className="mb-16 text-center md:text-left animate-stagger-tutorial">
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-bold uppercase tracking-widest mb-4">
-                            <span className="relative flex h-2 w-2">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-                            </span>
-                            {t.tutorial.hero.tag}
-                        </div>
-                        <h1 className="text-white text-4xl md:text-6xl font-black leading-tight tracking-tight mb-4">
-                            {t.tutorial.hero.title} <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-emerald-400">{t.tutorial.hero.titleHighlight}</span>
-                        </h1>
-                        <p className="text-slate-400 text-lg md:text-xl max-w-2xl font-light">
-                            {t.tutorial.hero.subtitle} <span className="text-white font-medium">{t.tutorial.hero.subtitleHighlight}</span> {t.tutorial.hero.subtitleEnd}
-                        </p>
-                    </div>
+                {/* ── 3 steps ── */}
+                <ol className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {steps.map((s, i) => (
+                        <li key={s.title} className="rounded-2xl bg-surface-dark border border-white/10 p-5 flex flex-col gap-3">
+                            <div className="flex items-center gap-3">
+                                <span className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                                    <span className="material-symbols-outlined">{s.icon}</span>
+                                </span>
+                                <span className="text-sm text-slate-400">{tt.page.step} {i + 1}</span>
+                            </div>
+                            <h2 className="text-lg font-semibold text-white">{s.title.replace(/^\d+\.\s*/, "")}</h2>
+                            <p className="text-slate-300 leading-relaxed">
+                                {s.desc} <strong className="text-white font-semibold">{s.descHighlight}</strong> {s.descEnd}
+                            </p>
+                        </li>
+                    ))}
+                </ol>
 
-                    {/* Step-by-Step Horizontal Timeline */}
-                    <div className="relative mb-20 animate-stagger-tutorial">
-                        <div className="absolute top-1/2 left-0 w-full h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent -translate-y-1/2 hidden md:block"></div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
-                            {/* Step 1 */}
-                            <div className="group">
-                                <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-8 transition-all hover:border-primary/50 hover:bg-black/60 h-full">
-                                    <div className="w-14 h-14 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-6 group-hover:bg-primary group-hover:text-black transition-all">
-                                        <span className="material-symbols-outlined text-3xl">straighten</span>
-                                    </div>
-                                    <h3 className="text-white text-xl font-bold mb-2">{t.tutorial.steps.distance.title}</h3>
-                                    <p className="text-slate-400 leading-relaxed">{t.tutorial.steps.distance.desc} <span className="text-primary font-semibold">{t.tutorial.steps.distance.descHighlight}</span> {t.tutorial.steps.distance.descEnd}</p>
-                                </div>
-                            </div>
-                            {/* Step 2 */}
-                            <div className="group">
-                                <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-8 transition-all hover:border-primary/50 hover:bg-black/60 h-full">
-                                    <div className="w-14 h-14 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-6 group-hover:bg-primary group-hover:text-black transition-all">
-                                        <span className="material-symbols-outlined text-3xl">view_in_ar</span>
-                                    </div>
-                                    <h3 className="text-white text-xl font-bold mb-2">{t.tutorial.steps.angle.title}</h3>
-                                    <p className="text-slate-400 leading-relaxed">{t.tutorial.steps.angle.desc} <span className="text-primary font-semibold">{t.tutorial.steps.angle.descHighlight}</span> {t.tutorial.steps.angle.descEnd}</p>
-                                </div>
-                            </div>
-                            {/* Step 3 */}
-                            <div className="group">
-                                <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-8 transition-all hover:border-primary/50 hover:bg-black/60 h-full">
-                                    <div className="w-14 h-14 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-6 group-hover:bg-primary group-hover:text-black transition-all">
-                                        <span className="material-symbols-outlined text-3xl">wb_sunny</span>
-                                    </div>
-                                    <h3 className="text-white text-xl font-bold mb-2">{t.tutorial.steps.lighting.title}</h3>
-                                    <p className="text-slate-400 leading-relaxed">{t.tutorial.steps.lighting.desc} <span className="text-primary font-semibold">{t.tutorial.steps.lighting.descHighlight}</span> {t.tutorial.steps.lighting.descEnd}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* What FitVision AI Can Do */}
-                    <div className="mb-20 animate-stagger-tutorial">
-                        <h2 className="text-white text-2xl font-bold mb-8 flex items-center gap-3">
-                            <span className="material-symbols-outlined text-primary">fitness_center</span>
-                            {t.tutorial.capabilities.title}
-                        </h2>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {/* Squat */}
-                            <div className="bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl p-6">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary">
-                                        <span className="material-symbols-outlined">airline_seat_legroom_extra</span>
-                                    </div>
-                                    <h3 className="text-xl font-bold text-white">{t.tutorial.capabilities.squat.title}</h3>
-                                </div>
-                                <p className="text-sm text-slate-400 mb-4 border-b border-white/10 pb-4">
-                                    {t.tutorial.capabilities.squat.desc} <span className="text-primary font-bold">{t.tutorial.capabilities.squat.descHighlight}</span>.
+                {/* ── Do / Don't ── */}
+                <section aria-labelledby="guide-h">
+                    <h2 id="guide-h" className="text-lg font-semibold text-white mb-1">{tt.visualGuide.title}</h2>
+                    <p className="text-sm text-slate-400 mb-3">{tt.page.topView}</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <figure className="rounded-3xl bg-surface-dark border border-primary/30 p-5 flex flex-col gap-4">
+                            <SetupDiagram correct label={tt.page.doTitle} />
+                            <figcaption>
+                                <p className="font-semibold text-white flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-primary">check_circle</span>{tt.page.doTitle}
                                 </p>
-                                <ul className="space-y-2 text-sm text-slate-300">
-                                    {t.tutorial.capabilities.squat.points.map((point, i) => (
-                                        <li key={`sq-${i}`} className="flex gap-2"><span className="text-red-400">•</span> {point}</li>
+                                <p className="text-sm text-slate-300 mt-1.5">{tt.visualGuide.correct.desc}</p>
+                                <ul className="mt-2 text-sm text-slate-200 space-y-1">
+                                    <li>• {tt.visualGuide.correct.point1}</li>
+                                    <li>• {tt.visualGuide.correct.point2}</li>
+                                </ul>
+                            </figcaption>
+                        </figure>
+                        <figure className="rounded-3xl bg-surface-dark border border-orange-400/30 p-5 flex flex-col gap-4">
+                            <SetupDiagram correct={false} label={tt.page.dontTitle} />
+                            <figcaption>
+                                <p className="font-semibold text-white flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-orange-300">cancel</span>{tt.page.dontTitle}
+                                </p>
+                                <p className="text-sm text-slate-300 mt-1.5">{tt.visualGuide.incorrect.desc}</p>
+                                <ul className="mt-2 text-sm text-slate-200 space-y-1">
+                                    <li>• {tt.visualGuide.incorrect.point1}</li>
+                                    <li>• {tt.visualGuide.incorrect.point2}</li>
+                                </ul>
+                            </figcaption>
+                        </figure>
+                    </div>
+                </section>
+
+                {/* ── What gets checked ── */}
+                <section aria-labelledby="ex-h">
+                    <h2 id="ex-h" className="text-lg font-semibold text-white mb-3">{tt.page.exercisesTitle}</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {exercises.map((ex) => (
+                            <div key={ex.key} className="rounded-2xl bg-surface-dark border border-white/10 p-5">
+                                <h3 className="font-semibold text-white mb-2">{ex.name}</h3>
+                                <ul className="text-sm text-slate-300 space-y-1.5">
+                                    {ex.points.map((p) => (
+                                        <li key={p} className="flex gap-2">
+                                            <span className="material-symbols-outlined text-base text-primary">check</span>{p}
+                                        </li>
                                     ))}
                                 </ul>
                             </div>
-
-                            {/* Deadlift */}
-                            <div className="bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl p-6">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary">
-                                        <span className="material-symbols-outlined">monitor_weight</span>
-                                    </div>
-                                    <h3 className="text-xl font-bold text-white">{t.tutorial.capabilities.deadlift.title}</h3>
-                                </div>
-                                <p className="text-sm text-slate-400 mb-4 border-b border-white/10 pb-4">
-                                    {t.tutorial.capabilities.deadlift.desc} <span className="text-primary font-bold">{t.tutorial.capabilities.deadlift.descHighlight}</span>.
-                                </p>
-                                <ul className="space-y-2 text-sm text-slate-300">
-                                    {t.tutorial.capabilities.deadlift.points.map((point, i) => (
-                                        <li key={`dl-${i}`} className="flex gap-2"><span className="text-primary">•</span> {point}</li>
-                                    ))}
-                                    <li className="flex gap-2 text-slate-500 italic mt-2">{t.tutorial.capabilities.deadlift.note}</li>
-                                </ul>
-                            </div>
-
-                            {/* Bench Press */}
-                            <div className="bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl p-6">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary">
-                                        <span className="material-symbols-outlined">airline_seat_flat</span>
-                                    </div>
-                                    <h3 className="text-xl font-bold text-white">{t.tutorial.capabilities.benchpress.title}</h3>
-                                </div>
-                                <p className="text-sm text-slate-400 mb-4 border-b border-white/10 pb-4">
-                                    {t.tutorial.capabilities.benchpress.desc} <span className="text-primary font-bold">{t.tutorial.capabilities.benchpress.descHighlight}</span>.
-                                </p>
-                                <ul className="space-y-2 text-sm text-slate-300">
-                                    {t.tutorial.capabilities.benchpress.points.map((point, i) => (
-                                        <li key={`bp-${i}`} className="flex gap-2"><span className="text-primary">•</span> {point}</li>
-                                    ))}
-                                    <li className="flex gap-2 text-slate-500 italic mt-2">{t.tutorial.capabilities.benchpress.note}</li>
-                                </ul>
-                            </div>
-                        </div>
+                        ))}
                     </div>
+                    <p className="text-sm text-slate-400 mt-3">{tt.page.methodNote}</p>
+                </section>
 
-                    {/* Visual Comparison Grid */}
-                    <div className="mb-20 animate-stagger-tutorial">
-                        <h2 className="text-white text-2xl font-bold mb-8 flex items-center gap-3">
-                            <span className="material-symbols-outlined text-primary">visibility</span>
-                            {t.tutorial.visualGuide.title}
-                        </h2>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            {/* DO Card */}
-                            <div className="relative bg-black/40 backdrop-blur-md border border-primary/30 rounded-3xl overflow-hidden group">
-                                <div className="absolute top-4 right-4 z-20 bg-primary text-black px-3 py-1 rounded-full text-xs font-black flex items-center gap-1 uppercase">
-                                    <span className="material-symbols-outlined text-sm font-bold">check_circle</span> {t.tutorial.visualGuide.correct.tag}
-                                </div>
-                                <div className="aspect-video w-full relative overflow-hidden">
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-60 z-10"></div>
-                                    <div className="w-full h-full bg-cover bg-center transition-transform duration-700 group-hover:scale-110"
-                                        data-alt="Correct fitness camera setup showing side profile of person exercising"
-                                        style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuDFidIs8pJ9BpnZsdXVlh_5-SlWpmYYgZ40z2ZFE9pEdH3D6PLvTGIytKGrHLJYnnLcBZ5zdpVLaEhBCk4zSLYB0rILfSsoXpnzllQrK-adWOkgR-3yb8Uh-YM9gwl6WLR9V2cd3DyfggKnT0QwqkNgzk9ibcQ0AY8ZLWktnPjuc0yBoLpyG5AxKn0iJlfx3f3lJ5IJNlRzXarPKWz2CSzJk0rDreTrekPlbm91tQwRRdn2Dp-bQM0OwW9NK68C6Trx5orWNXAoqOs')" }}>
-                                    </div>
-                                    {/* AI Overlay Mockup */}
-                                    <div className="absolute inset-0 z-10 p-6 flex items-center justify-center">
-                                        <div className="border-2 border-primary/40 rounded-lg w-3/4 h-3/4 flex items-center justify-center relative">
-                                            <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-primary"></div>
-                                            <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-primary"></div>
-                                            <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-primary"></div>
-                                            <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-primary"></div>
-                                            <span className="material-symbols-outlined text-primary text-6xl opacity-40">person_pin</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="p-8">
-                                    <h4 className="text-white text-xl font-bold mb-2">{t.tutorial.visualGuide.correct.title}</h4>
-                                    <p className="text-slate-400 mb-4">{t.tutorial.visualGuide.correct.desc}</p>
-                                    <ul className="space-y-2">
-                                        <li className="flex items-center gap-2 text-primary text-sm font-medium">
-                                            <span className="material-symbols-outlined text-lg">check</span> {t.tutorial.visualGuide.correct.point1}
-                                        </li>
-                                        <li className="flex items-center gap-2 text-primary text-sm font-medium">
-                                            <span className="material-symbols-outlined text-lg">check</span> {t.tutorial.visualGuide.correct.point2}
-                                        </li>
-                                    </ul>
-                                </div>
-                            </div>
-                            {/* DON'T Card */}
-                            <div className="relative bg-black/40 backdrop-blur-md border border-red-500/30 rounded-3xl overflow-hidden group">
-                                <div className="absolute top-4 right-4 z-20 bg-red-500 text-white px-3 py-1 rounded-full text-xs font-black flex items-center gap-1 uppercase shadow-lg shadow-red-500/20">
-                                    <span className="material-symbols-outlined text-sm font-bold">cancel</span> {t.tutorial.visualGuide.incorrect.tag}
-                                </div>
-                                <div className="aspect-video w-full relative overflow-hidden grayscale contrast-125">
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-60 z-10"></div>
-                                    <div className="w-full h-full bg-cover bg-center"
-                                        data-alt="Incorrect camera setup showing obscured person front facing too close"
-                                        style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuABq0St6WI-0QA2VcTqoowVH2dHbLFMZJd0JVnXXRGNGqVfOEDWT-BXFBShbU7SWNp88Z5NBxj352ShgTzdAUMuKDBZD1dkqkc6g7KfK7Nt8jQ4rmBIRTF-L6iQCAf45YMqZ4mJLLpfZB2AUkTKAf4VhW1JJ6NOJ332xO1lgMsT6ZuAd3YUjQ_WiY9TpV8b4f5MPrmk2HLCKBQueJcxe1Ufd4eRP1qWcF1vhFuLVAMZqQ7t5RLb_KEvyIpmQTyHKvD2Crl_GlSpBAg')" }}>
-                                    </div>
-                                    <div className="absolute inset-0 z-10 flex items-center justify-center">
-                                        <div className="text-red-500/80">
-                                            <span className="material-symbols-outlined text-[120px]">block</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="p-8">
-                                    <h4 className="text-white text-xl font-bold mb-2">{t.tutorial.visualGuide.incorrect.title}</h4>
-                                    <p className="text-slate-400 mb-4">{t.tutorial.visualGuide.incorrect.desc}</p>
-                                    <ul className="space-y-2">
-                                        <li className="flex items-center gap-2 text-red-400 text-sm font-medium">
-                                            <span className="material-symbols-outlined text-lg">close</span> {t.tutorial.visualGuide.incorrect.point1}
-                                        </li>
-                                        <li className="flex items-center gap-2 text-red-400 text-sm font-medium">
-                                            <span className="material-symbols-outlined text-lg">close</span> {t.tutorial.visualGuide.incorrect.point2}
-                                        </li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Call to Action */}
-                    <div className="flex flex-col items-center justify-center py-12 animate-stagger-tutorial">
-                        <button
-                            onClick={handleLaunchCamera}
-                            className="relative group bg-primary hover:bg-emerald-400 text-black px-10 py-5 rounded-2xl font-black text-xl flex items-center gap-4 transition-all hover:scale-105 active:scale-95 shadow-[0_0_40px_-10px_rgba(60,249,26,0.6)]"
-                        >
-                            <span className="material-symbols-outlined text-3xl">videocam</span>
-                            {t.tutorial.cta.button}
-                            {/* Pulsing Glow Effect */}
-                            <span className="absolute inset-0 rounded-2xl animate-ping bg-primary/30 -z-10 group-hover:opacity-0"></span>
-                        </button>
-                        <p className="mt-6 text-slate-500 text-sm flex items-center gap-2">
-                            <span className="material-symbols-outlined text-base">lock</span>
-                            {t.tutorial.cta.privacy}
-                        </p>
-                    </div>
-                </main>
-
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                    <Link
+                        href="/camera"
+                        className="h-14 px-8 rounded-2xl bg-primary text-background-dark text-lg font-semibold flex items-center justify-center gap-2 hover:brightness-110"
+                    >
+                        <span className="material-symbols-outlined">videocam</span>
+                        {tt.page.start}
+                    </Link>
+                    <p className="text-sm text-slate-400 flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-base">lock</span>
+                        {tt.cta.privacy}
+                    </p>
+                </div>
             </div>
         </DashboardLayout>
     );

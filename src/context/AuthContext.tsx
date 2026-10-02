@@ -2,8 +2,9 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase, isSupabaseConfigured } from "@/lib/supabaseClient";
 import type { User } from "@supabase/supabase-js";
+import { accountIdFor, getUserItem, setStorageAccount, setUserItem } from "@/lib/userStorage";
 
 interface AuthContextType {
     isLoggedIn: boolean;
@@ -55,7 +56,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             localStorage.removeItem("fitvision_logged_out");
             localStorage.removeItem("fitvision_user_email");
             localStorage.setItem("fitvision_demo_user", "true");
-            localStorage.setItem("fitvision_display_name", "FitVision Athlete");
             window.dispatchEvent(new Event("profileUpdated"));
         }
         setIsLoggedIn(true);
@@ -73,7 +73,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (typeof window !== "undefined") {
             localStorage.removeItem("fitvision_logged_out");
             localStorage.setItem("fitvision_user_email", cleanEmail);
-            localStorage.setItem("fitvision_display_name", username);
+            // Default display name for a new account only — never overwrite one the user chose.
+            const account = accountIdFor(emailUser);
+            setStorageAccount(account);
+            if (!getUserItem("fitvision_display_name")) setUserItem("fitvision_display_name", username, account);
             window.dispatchEvent(new Event("profileUpdated"));
             window.dispatchEvent(new Event("avatarUpdated"));
         }
@@ -95,6 +98,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 if (pathname !== "/login") {
                     router.push("/login");
                 }
+                return;
+            }
+
+            if (!isSupabaseConfigured) {
+                // Local/demo mode: no auth server to ask.
+                const savedEmail = localStorage.getItem("fitvision_user_email");
+                setIsLoggedIn(true);
+                setUser(savedEmail ? createEmailUser(savedEmail) : DEMO_USER);
                 return;
             }
 
@@ -128,6 +139,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
 
         checkSession();
+
+        if (!isSupabaseConfigured) {
+            return () => {
+                isMounted = false;
+            };
+        }
 
         try {
             const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -171,6 +188,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         router.push("/login");
 
         // 4. Background fire-and-forget signOut with short timeout
+        if (!isSupabaseConfigured) return;
         try {
             const signOutPromise = supabase.auth.signOut();
             const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 200));
@@ -180,9 +198,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    // Point per-account storage at the current user before any page reads it,
+    // and remount pages when the account changes so they reload that account's data.
+    const account = accountIdFor(user);
+    setStorageAccount(account);
+
     return (
         <AuthContext.Provider value={{ isLoggedIn, user, logout, loginAsDemo, loginWithEmail }}>
-            {children}
+            <React.Fragment key={account ?? "signed-out"}>{children}</React.Fragment>
         </AuthContext.Provider>
     );
 }

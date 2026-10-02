@@ -16,3 +16,12 @@ export function calculateAngle(a: Landmark, b: Landmark, c: Landmark): number {
     if (angle > 180.0) angle = 360.0 - angle;
     return angle || 0;
 }
+
+/**
+ * 2D distance in normalized image coordinates.
+ * Must match tools/features/extract_features.py (np.linalg.norm on [x, y]) —
+ * the deadlift and bench press models were trained on these values.
+ */
+export function dist2d(a: Landmark, b: Landmark): number {
+    return Math.hypot(a.x - b.x, a.y - b.y);
+}

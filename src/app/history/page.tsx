@@ -3,278 +3,231 @@ import DashboardLayout from "@/components/DashboardLayout";
 import React, { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
+import {
+    EXERCISE_IDS,
+    ExerciseId,
+    WorkoutSession,
+    averageScore,
+    bestScore,
+    loadHistory,
+    setCurrentSession,
+    totalReps,
+} from "@/lib/workoutStore";
 
 export default function HistoryPage() {
-    const { t } = useLanguage();
+    const { t, language } = useLanguage();
     const router = useRouter();
-    const [history, setHistory] = useState<any[]>([]);
-    const [filter, setFilter] = useState("all");
+    const [history, setHistory] = useState<WorkoutSession[]>([]);
+    const [filter, setFilter] = useState<"all" | ExerciseId>("all");
 
     useEffect(() => {
-        const stored = JSON.parse(localStorage.getItem('fitvision_history') || '[]');
-        setHistory(stored);
+        setHistory(loadHistory());
     }, []);
 
-    // Computed stats from real data
-    const stats = useMemo(() => {
-        if (history.length === 0) return { avg: 0, total: 0, best: 0, totalReps: 0, totalErrors: 0 };
-        const avg = Math.round(history.reduce((a, s) => a + (s.avgScore || 0), 0) / history.length);
-        const best = Math.max(...history.map(s => s.avgScore || 0));
-        const totalReps = history.reduce((a, s) => a + (s.completedReps || 0), 0);
-        const totalErrors = history.reduce((a, s) => a + (s.errorCount || 0), 0);
-        return { avg, total: history.length, best, totalReps, totalErrors };
-    }, [history]);
-
-    // Filtered sessions
+    // Filter by exercise id (works in both languages and for old records)
     const filteredSessions = useMemo(() => {
         if (filter === "all") return history;
-        return history.filter(s => s.exercise?.toLowerCase() === filter.toLowerCase());
+        return history.filter(s => s.exerciseId === filter);
     }, [history, filter]);
 
+    // Stats follow the selected filter
+    const stats = useMemo(() => ({
+        avg: averageScore(filteredSessions),
+        best: bestScore(filteredSessions),
+        totalReps: totalReps(filteredSessions),
+        total: filteredSessions.length,
+    }), [filteredSessions]);
 
-    // Build dynamic chart points from recent sessions (up to 10)
+    const fmtScore = (v: number | null) => (v === null ? "—" : `${v}%`);
+
+    // Chart: the 10 MOST RECENT scored sessions, oldest → newest left to right.
+    // x/y are percentages so HTML markers stay round at any width.
+    const Y_MIN = 40;
     const chartData = useMemo(() => {
-        const recent = [...history].reverse().slice(0, 10);
-        if (recent.length === 0) return { path: "", areaPath: "", points: [] as { x: number; y: number; score: number }[] };
-        const w = 1000;
-        const h = 200;
-        const padding = 20;
-        const step = recent.length > 1 ? (w - padding * 2) / (recent.length - 1) : 0;
-        const pts = recent.map((s, i) => ({
-            x: padding + i * step,
-            y: h - ((s.avgScore || 0) / 100) * (h - padding * 2) - padding,
-            score: s.avgScore || 0,
-        }));
-
-        // Build the SVG path
-        let line = `M${pts[0].x},${pts[0].y}`;
-        for (let i = 1; i < pts.length; i++) {
-            const prevPt = pts[i - 1];
-            const cp1x = prevPt.x + (pts[i].x - prevPt.x) * 0.4;
-            const cp2x = prevPt.x + (pts[i].x - prevPt.x) * 0.6;
-            line += ` C${cp1x},${prevPt.y} ${cp2x},${pts[i].y} ${pts[i].x},${pts[i].y}`;
-        }
-        const area = `${line} V${h} H${pts[0].x} Z`;
-        return { path: line, areaPath: area, points: pts };
-    }, [history]);
+        const recent = filteredSessions.filter(s => s.avgScore !== null).slice(0, 10).reverse();
+        const pts = recent.map((s, i) => {
+            const score = s.avgScore ?? 0;
+            return {
+                id: s.id,
+                x: recent.length > 1 ? (i / (recent.length - 1)) * 100 : 50,
+                y: 100 - ((Math.max(Y_MIN, score) - Y_MIN) / (100 - Y_MIN)) * 100,
+                score,
+                session: s,
+            };
+        });
+        const path = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
+        return { path, points: pts };
+    }, [filteredSessions]);
+    const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
     // Exercise icon mapping
-    const getExerciseIcon = (exercise: string) => {
-        const e = exercise?.toLowerCase() || '';
-        if (e.includes('bench')) return 'airline_seat_flat';
-        if (e.includes('squat')) return 'downhill_skiing';
+    const getExerciseIcon = (id: ExerciseId) => {
+        if (id === 'benchpress') return 'airline_seat_flat';
+        if (id === 'squat') return 'accessibility_new';
         return 'fitness_center';
     };
 
-    const getScoreColor = (score: number) => {
-        if (score >= 90) return 'text-primary drop-shadow-[0_0_8px_rgba(57,255,20,0.5)]';
-        if (score >= 70) return 'text-yellow-400';
-        return 'text-red-400';
+    const getScoreColor = (score: number | null) => {
+        if (score === null) return 'text-slate-400';
+        if (score >= 90) return 'text-primary';
+        if (score >= 70) return 'text-white';
+        return 'text-orange-300';
     };
 
-    const getScoreBg = (score: number) => {
-        if (score >= 90) return 'from-primary/20 to-transparent';
-        if (score >= 70) return 'from-yellow-400/20 to-transparent';
-        return 'from-red-400/20 to-transparent';
+    const locale = language === 'th' ? 'th-TH' : 'en-US';
+    const openSession = (session: WorkoutSession) => {
+        setCurrentSession(session, false);
+        router.push('/summary');
     };
+
+    const statCards = [
+        { label: t.history.statsCards.avgScore, value: fmtScore(stats.avg) },
+        { label: t.history.statsCards.bestScore, value: fmtScore(stats.best) },
+        { label: t.history.statsCards.totalReps, value: `${stats.totalReps}` },
+        { label: t.history.statsCards.sessions, value: `${stats.total}` },
+    ];
+    const fmtDate = (ts: string) => new Date(ts).toLocaleDateString(locale, { day: 'numeric', month: 'short' });
+    const last = chartData.points[chartData.points.length - 1];
+    const hovered = hoverIdx !== null ? chartData.points[hoverIdx] : null;
 
     return (
-        <>
-            <DashboardLayout>
-                <div className="max-w-[1200px] mx-auto p-5 md:p-10 flex flex-col gap-6 pb-24">
-
-                    {/* Header */}
-                    <header className="flex flex-col md:flex-row md:items-end justify-between gap-5 animate-stagger-history">
-                        <div className="flex flex-col gap-1.5">
-                            <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-white flex items-center gap-3">
-                                <span className="material-symbols-outlined text-primary text-3xl md:text-4xl drop-shadow-[0_0_12px_rgba(57,255,20,0.4)]">history</span>
-                                {t.history.title}
-                            </h1>
-                            <p className="text-slate-400 text-sm font-medium">{t.history.subtitle}</p>
-                        </div>
-
-                        {/* Filter Pills */}
-                        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                            {["all", "Bench Press", "Squat", "Deadlift"].map(f => (
-                                <button
-                                    key={f}
-                                    onClick={() => setFilter(f)}
-                                    className={`px-4 py-2 rounded-full text-sm font-semibold transition-all whitespace-nowrap ${filter === f
-                                        ? "bg-primary text-black shadow-[0_0_12px_rgba(57,255,20,0.3)]"
-                                        : "bg-white/5 border border-white/10 text-slate-300 hover:border-primary/40 hover:text-white"
-                                        }`}
-                                >
-                                    {f === "all" ? t.history.filters.all : f === "Bench Press" ? t.dashboard.exerciseSelection.benchPress : f === "Squat" ? t.dashboard.exerciseSelection.squat : t.dashboard.exerciseSelection.deadlift}
-                                </button>
-                            ))}
-                        </div>
-                    </header>
-
-                    {/* Stats Cards Row */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-                        {[
-                            { icon: "speed", label: t.history.statsCards.avgScore, value: `${stats.avg}%`, color: "text-primary" },
-                            { icon: "emoji_events", label: t.history.statsCards.bestScore, value: `${stats.best}%`, color: "text-yellow-400" },
-                            { icon: "repeat", label: t.history.statsCards.totalReps, value: `${stats.totalReps}`, color: "text-blue-400" },
-                            { icon: "done_all", label: t.history.statsCards.sessions, value: `${stats.total}`, color: "text-violet-400" },
-                        ].map((stat, i) => (
-                            <div key={i} className="animate-stagger-history bg-surface-dark rounded-2xl p-4 md:p-5 border border-white/5 relative overflow-hidden group hover:border-primary/20 transition-all">
-                                <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-white/[0.02] to-transparent rounded-bl-2xl pointer-events-none"></div>
-                                <span className={`material-symbols-outlined text-xl md:text-2xl mb-2 block ${stat.color}`}>{stat.icon}</span>
-                                <p className="text-xl md:text-2xl font-bold text-white">{stat.value}</p>
-                                <p className="text-xs text-slate-500 font-medium mt-0.5 uppercase tracking-wider">{stat.label}</p>
-                            </div>
+        <DashboardLayout>
+            <div className="max-w-5xl mx-auto w-full px-4 md:px-8 py-6 flex flex-col gap-6 pb-16">
+                <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                    <div>
+                        <h1 className="text-2xl md:text-3xl font-semibold text-white">{t.history.title}</h1>
+                        <p className="text-slate-300 mt-1">{t.history.subtitle}</p>
+                    </div>
+                    <div role="group" aria-label={t.home.step1} className="flex gap-2 overflow-x-auto pb-1">
+                        {(["all", ...EXERCISE_IDS] as const).map(f => (
+                            <button
+                                key={f}
+                                type="button"
+                                aria-pressed={filter === f}
+                                onClick={() => setFilter(f)}
+                                className={`h-10 px-4 rounded-full text-sm font-medium whitespace-nowrap border transition-colors cursor-pointer ${filter === f
+                                    ? "bg-white text-background-dark border-white"
+                                    : "border-white/15 text-slate-200 hover:border-white/40"
+                                    }`}
+                            >
+                                {f === "all" ? t.history.filters.all : t.camera.exerciseName[f]}
+                            </button>
                         ))}
                     </div>
+                </header>
 
-                    {/* Chart Card */}
-                    {history.length > 0 && (
-                        <div className="animate-stagger-history bg-surface-dark rounded-2xl p-5 md:p-6 border border-white/5 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 w-48 h-48 bg-primary/5 rounded-full blur-[80px] -mr-24 -mt-24 pointer-events-none"></div>
-                            <div className="flex justify-between items-center mb-4 relative z-10">
-                                <div>
-                                    <h2 className="text-lg font-semibold text-white">{t.history.chart.title}</h2>
-                                    <p className="text-slate-500 text-xs">{history.length} {t.history.chart.sessionsShown}</p>
-                                </div>
-                                <div className={`flex items-center gap-1.5 text-sm font-semibold ${stats.avg >= 80 ? 'text-primary' : 'text-yellow-400'}`}>
-                                    <span className="material-symbols-outlined text-base">trending_up</span>
-                                    {stats.avg}% {t.history.avg}
-                                </div>
+                <dl className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {statCards.map((c) => (
+                        <div key={c.label} className="rounded-2xl bg-surface-dark border border-white/10 p-4">
+                            <dt className="text-sm text-slate-300">{c.label}</dt>
+                            <dd className="text-2xl font-bold text-white tabular-nums mt-1">{c.value}</dd>
+                        </div>
+                    ))}
+                </dl>
+
+                {chartData.points.length > 1 && (
+                    <section aria-labelledby="trend-h" className="rounded-3xl bg-surface-dark border border-white/10 p-5 md:p-6">
+                        <div className="flex items-baseline justify-between gap-3 mb-4">
+                            <h2 id="trend-h" className="text-base font-semibold text-white">{t.history.chart.title}</h2>
+                            <p className="text-sm text-slate-300 tabular-nums">
+                                {hovered ? `${fmtDate(hovered.session.timestamp)} · ${hovered.score}%` : `${chartData.points.length} ${t.history.chart.sessionsShown}`}
+                            </p>
+                        </div>
+                        <div className="flex gap-3">
+                            {/* y axis */}
+                            <div className="relative w-8 h-44 text-xs text-slate-400 tabular-nums shrink-0" aria-hidden="true">
+                                {[100, 70, 40].map(v => (
+                                    <span key={v} className="absolute right-0 -translate-y-1/2" style={{ top: `${100 - ((v - Y_MIN) / (100 - Y_MIN)) * 100}%` }}>{v}</span>
+                                ))}
                             </div>
-                            <div className="w-full h-[180px] relative z-10">
-                                <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 1000 200">
-                                    <defs>
-                                        <linearGradient id="chartGradient2" x1="0" x2="0" y1="0" y2="1">
-                                            <stop offset="0%" stopColor="#39FF14" stopOpacity="0.15"></stop>
-                                            <stop offset="100%" stopColor="#39FF14" stopOpacity="0"></stop>
-                                        </linearGradient>
-                                    </defs>
-                                    {/* Faint grid lines */}
-                                    {[0, 50, 100, 150, 200].map(y => (
-                                        <line key={y} stroke="#ffffff08" strokeWidth="1" x1="0" x2="1000" y1={y} y2={y} />
-                                    ))}
-                                    {/* Area */}
-                                    {chartData.areaPath && <path d={chartData.areaPath} fill="url(#chartGradient2)" />}
-                                    {/* Line */}
-                                    {chartData.path && (
-                                        <path
-                                            d={chartData.path}
-                                            fill="none"
-                                            stroke="#39FF14"
-                                            strokeLinecap="round"
-                                            strokeWidth="2.5"
-                                            vectorEffect="non-scaling-stroke"
-                                            className="drop-shadow-[0_0_6px_rgba(57,255,20,0.5)]"
-                                        />
-                                    )}
-                                    {/* Data points */}
-                                    {chartData.points.map((pt, i) => (
-                                        <g key={i}>
-                                            <circle cx={pt.x} cy={pt.y} fill="#0a0f0a" r="5" stroke="#39FF14" strokeWidth="2" />
-                                            {i === chartData.points.length - 1 && (
-                                                <circle cx={pt.x} cy={pt.y} fill="#39FF14" r="4" className="animate-pulse" />
-                                            )}
-                                        </g>
-                                    ))}
+                            <div className="relative flex-1 h-44" onMouseLeave={() => setHoverIdx(null)}>
+                                <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                                    {[100, 70, 40].map(v => {
+                                        const y = 100 - ((v - Y_MIN) / (100 - Y_MIN)) * 100;
+                                        return <line key={v} x1="0" x2="100" y1={y} y2={y} stroke="rgba(255,255,255,0.08)" strokeWidth="1" vectorEffect="non-scaling-stroke" />;
+                                    })}
+                                    {hovered && <line x1={hovered.x} x2={hovered.x} y1="0" y2="100" stroke="rgba(255,255,255,0.25)" strokeWidth="1" vectorEffect="non-scaling-stroke" />}
+                                    <path d={chartData.path} fill="none" stroke="#39FF14" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
                                 </svg>
+                                {chartData.points.map((p, i) => (
+                                    <button
+                                        key={p.id}
+                                        type="button"
+                                        onMouseEnter={() => setHoverIdx(i)}
+                                        onFocus={() => setHoverIdx(i)}
+                                        onBlur={() => setHoverIdx(null)}
+                                        onClick={() => openSession(p.session)}
+                                        aria-label={`${t.camera.exerciseName[p.session.exerciseId]} ${fmtDate(p.session.timestamp)} ${p.score}%`}
+                                        className="absolute size-8 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center cursor-pointer rounded-full focus-visible:outline-2 focus-visible:outline-primary"
+                                        style={{ left: `${p.x}%`, top: `${p.y}%` }}
+                                    >
+                                        <span className={`block rounded-full border-2 border-surface-dark bg-primary ${hoverIdx === i || i === chartData.points.length - 1 ? "size-3" : "size-2.5"}`} />
+                                    </button>
+                                ))}
+                                {last && hoverIdx === null && (
+                                    <span className="absolute text-sm font-semibold text-white tabular-nums -translate-x-full -translate-y-7 pr-1" style={{ left: `${last.x}%`, top: `${last.y}%` }} aria-hidden="true">
+                                        {last.score}%
+                                    </span>
+                                )}
                             </div>
                         </div>
-                    )}
+                        <div className="flex justify-between pl-11 mt-2 text-xs text-slate-400" aria-hidden="true">
+                            <span>{fmtDate(chartData.points[0].session.timestamp)}</span>
+                            <span>{fmtDate(last.session.timestamp)}</span>
+                        </div>
+                    </section>
+                )}
 
-                    {/* Session List */}
-                    <div className="flex flex-col gap-3">
-                        <h3 className="text-lg font-bold text-white flex items-center gap-2 animate-stagger-history">
-                            <span className="material-symbols-outlined text-primary text-xl">list_alt</span>
-                            {t.history.pastSessions.title}
-                            {filteredSessions.length > 0 && (
-                                <span className="text-xs text-slate-500 font-medium ml-1">({filteredSessions.length})</span>
-                            )}
-                        </h3>
-
-                        {filteredSessions.length === 0 ? (
-                            <div className="animate-stagger-history flex flex-col items-center justify-center gap-4 py-16 bg-surface-dark rounded-2xl border border-white/5">
-                                <span className="material-symbols-outlined text-5xl text-slate-700">fitness_center</span>
-                                <p className="text-slate-500 font-medium text-sm">{t.history.pastSessions.empty}</p>
-                                <button
-                                    onClick={() => router.push('/camera')}
-                                    className="mt-2 px-6 py-2.5 bg-primary text-black font-bold rounded-xl text-sm hover:shadow-[0_0_20px_rgba(57,255,20,0.4)] transition-all active:scale-95"
-                                >
-                                    {t.history.startWorkout}
-                                </button>
-                            </div>
-                        ) : (
-                            filteredSessions.map((session, i) => (
-                                <div
-                                    key={session.id || i}
-                                    onClick={() => {
-                                        sessionStorage.setItem('fitvision_session_stats', JSON.stringify(session));
-                                        sessionStorage.setItem('fitvision_errors', JSON.stringify(session.errors || []));
-                                        router.push('/summary');
-                                    }}
-                                    className="animate-stagger-history group bg-surface-dark hover:bg-white/[0.03] border border-white/5 hover:border-primary/30 rounded-2xl p-4 md:p-5 transition-all cursor-pointer relative overflow-hidden"
-                                >
-                                    {/* Accent gradient on hover */}
-                                    <div className={`absolute inset-0 bg-gradient-to-r ${getScoreBg(session.avgScore)} group-hover:opacity-100 transition-opacity pointer-events-none`}></div>
-
-                                    <div className="relative z-10 flex items-center gap-4">
-                                        {/* Exercise Icon */}
-                                        <div className="hidden sm:flex items-center justify-center w-14 h-14 rounded-xl bg-white/5 border border-white/10 group-hover:border-primary/30 group-hover:bg-primary/10 transition-all shrink-0">
-                                            <span className="material-symbols-outlined text-2xl text-slate-400 group-hover:text-primary transition-colors">
-                                                {getExerciseIcon(session.exercise)}
-                                            </span>
-                                        </div>
-
-                                        {/* Middle Info */}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <h4 className="text-base font-bold text-white group-hover:text-primary transition-colors capitalize truncate">
-                                                    {session.exercise}
-                                                </h4>
-                                                {session.errorCount === 0 && (
-                                                    <span className="px-2 py-0.5 text-[10px] font-bold bg-primary/15 text-primary rounded-full border border-primary/20 shrink-0">
-                                                        {t.history.perfect}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-                                                <span className="flex items-center gap-1">
-                                                    <span className="material-symbols-outlined text-[14px]">schedule</span>
-                                                    {new Date(session.timestamp).toLocaleDateString()} · {new Date(session.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                </span>
-                                                {session.completedReps > 0 && (
-                                                    <span className="flex items-center gap-1 text-blue-400/80">
-                                                        <span className="material-symbols-outlined text-[14px]">replay</span>
-                                                        {session.completedReps} {t.history.reps}
-                                                    </span>
-                                                )}
-                                                {session.errorCount > 0 && (
-                                                    <span className="flex items-center gap-1 text-orange-400/80">
-                                                        <span className="material-symbols-outlined text-[14px]">warning</span>
-                                                        {session.errorCount} {t.history.pastSessions.mistakes.toLowerCase()}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Score Badge */}
-                                        <div className="flex flex-col items-center gap-0.5 shrink-0 pl-3 border-l border-white/5">
-                                            <span className={`text-2xl md:text-3xl font-black tabular-nums ${getScoreColor(session.avgScore)}`}>
-                                                {session.avgScore}<span className="text-sm font-semibold">%</span>
-                                            </span>
-                                            <span className="text-[10px] text-slate-600 uppercase tracking-wider font-medium">{t.history.pastSessions.accuracy}</span>
-                                        </div>
-
-                                        {/* Arrow */}
-                                        <span className="material-symbols-outlined text-slate-600 group-hover:text-primary group-hover:translate-x-1 transition-all hidden md:block">
-                                            chevron_right
+                <section aria-labelledby="past-h" className="flex flex-col gap-3">
+                    <h2 id="past-h" className="text-lg font-semibold text-white">
+                        {t.history.pastSessions.title} <span className="text-slate-400 font-normal text-base">({filteredSessions.length})</span>
+                    </h2>
+                    {filteredSessions.length === 0 ? (
+                        <div className="flex flex-col items-center gap-3 py-12 rounded-2xl border border-white/10 text-center">
+                            <span className="material-symbols-outlined text-4xl text-slate-500">fitness_center</span>
+                            <p className="text-slate-300">{t.history.pastSessions.empty}</p>
+                            <button
+                                type="button"
+                                onClick={() => router.push('/')}
+                                className="h-11 px-5 rounded-xl bg-primary text-background-dark font-semibold cursor-pointer hover:brightness-110"
+                            >
+                                {t.history.startWorkout}
+                            </button>
+                        </div>
+                    ) : (
+                        <ul className="rounded-2xl border border-white/10 bg-surface-dark divide-y divide-white/5 overflow-hidden">
+                            {filteredSessions.map((session) => (
+                                <li key={session.id}>
+                                    <button
+                                        type="button"
+                                        onClick={() => openSession(session)}
+                                        className="w-full grid grid-cols-[40px_minmax(0,1fr)_auto_20px] items-center gap-3 md:gap-4 px-4 md:px-5 py-4 text-left hover:bg-white/[0.04] cursor-pointer"
+                                    >
+                                        <span className="size-10 rounded-xl bg-white/[0.06] flex items-center justify-center text-slate-300">
+                                            <span className="material-symbols-outlined text-xl">{getExerciseIcon(session.exerciseId)}</span>
                                         </span>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-            </DashboardLayout>
-        </>
+                                        <span className="min-w-0">
+                                            <span className="block font-semibold text-white truncate">{t.camera.exerciseName[session.exerciseId]}</span>
+                                            <span className="block text-sm text-slate-400 truncate">
+                                                {new Date(session.timestamp).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })} · {new Date(session.timestamp).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}
+                                                {" · "}{session.completedReps}/{session.repGoal} {t.history.reps}
+                                                {" · "}
+                                                {session.errorCount === 0
+                                                    ? <span className="text-primary">{t.history.perfect}</span>
+                                                    : <span className="text-orange-300">{session.errorCount} {t.history.pastSessions.mistakes}</span>}
+                                            </span>
+                                        </span>
+                                        <span className={`text-xl font-bold tabular-nums ${getScoreColor(session.avgScore)}`}>
+                                            {session.avgScore === null ? "—" : `${session.avgScore}%`}
+                                        </span>
+                                        <span className="material-symbols-outlined text-slate-500">chevron_right</span>
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </section>
+            </div>
+        </DashboardLayout>
     );
 }

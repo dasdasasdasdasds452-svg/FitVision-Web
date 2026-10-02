@@ -16,19 +16,33 @@ interface LanguageContextType {
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-    const [language, setLanguageState] = useState<Language>('en');
+    // Thai is the primary audience, so it is the default.
+    const [language, setLanguageState] = useState<Language>('th');
 
     useEffect(() => {
         // Run once on mount: sync with localStorage if exists
-        const savedLang = localStorage.getItem('fitvision_lang') as Language;
-        if (savedLang && (savedLang === 'en' || savedLang === 'th')) {
-            setLanguageState(savedLang);
+        try {
+            const savedLang = localStorage.getItem('fitvision_lang');
+            if (savedLang === 'en' || savedLang === 'th') {
+                setLanguageState(savedLang);
+            }
+        } catch {
+            // storage unavailable — keep default
         }
     }, []);
 
+    useEffect(() => {
+        // Screen readers and the browser's font fallback rely on the page language.
+        document.documentElement.lang = language;
+    }, [language]);
+
     const setLanguage = (lang: Language) => {
         setLanguageState(lang);
-        localStorage.setItem('fitvision_lang', lang);
+        try {
+            localStorage.setItem('fitvision_lang', lang);
+        } catch {
+            // ignore
+        }
     };
 
     const t = language === 'en' ? en : th;

@@ -1,398 +1,326 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useLanguage } from "@/context/LanguageContext";
+import {
+    ErrorRecord,
+    WorkoutSession,
+    cameraHref,
+    groupErrors,
+    loadCurrentSession,
+    markCurrentSessionSeen,
+    setCurrentSession,
+    updateSessionInHistory,
+} from "@/lib/workoutStore";
 
-interface ErrorRecord {
-    url: string;
-    title: string;
-    detail: string;
-    time: string;
-    elapsedSeconds?: number;
-    elapsedFormatted?: string;
-    repNumber?: number;
-    riskLevel?: string;
-    riskScore?: number;
-    riskLabelTh?: string;
-    riskColor?: string;
-    riskFactors?: string[];
-    recommendation?: string;
-}
-
-// Group errors by title to show most frequent
-const groupErrors = (errorList: ErrorRecord[]) => {
-    const counts: Record<string, number> = {};
-    errorList.forEach(err => {
-        counts[err.title] = (counts[err.title] || 0) + 1;
+function renderMarkdown(text: string): string {
+    const raw = marked.parse(text, { async: false, breaks: true, gfm: true }) as string;
+    return DOMPurify.sanitize(raw, {
+        ALLOWED_TAGS: ["p", "br", "strong", "em", "b", "i", "ul", "ol", "li", "code", "h1", "h2", "h3", "h4", "blockquote"],
+        ALLOWED_ATTR: [],
     });
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
-};
+}
 
 export default function SummaryPage() {
     const { t, language } = useLanguage();
     const router = useRouter();
-    const [errors, setErrors] = useState<ErrorRecord[]>([]);
-    const [stats, setStats] = useState<any>(null);
-    const [aiAdvice, setAiAdvice] = useState<string>("");
+    const [session, setSession] = useState<WorkoutSession | null>(null);
+    const [fresh, setFresh] = useState(false);
+    const [loaded, setLoaded] = useState(false);
+    const [aiAdvice, setAiAdvice] = useState("");
     const [isLoadingAI, setIsLoadingAI] = useState(false);
+    const [aiFailed, setAiFailed] = useState(false);
 
-    useEffect(() => {
-        const storedErrors = JSON.parse(sessionStorage.getItem('fitvision_errors') || '[]');
-        const storedStatsString = sessionStorage.getItem('fitvision_session_stats');
-        let currentStats = null;
+    const exerciseLabel = session ? t.camera.exerciseName[session.exerciseId] : "";
+    const errors = session?.errors ?? [];
 
-        if (storedStatsString) {
-            currentStats = JSON.parse(storedStatsString);
-            setStats(currentStats);
-        }
-        setErrors(storedErrors);
-
-        // Save to global history (localStorage)
-        if (currentStats && currentStats.id) {
-            const history = JSON.parse(localStorage.getItem('fitvision_history') || '[]');
-            if (!history.find((h: any) => h.id === currentStats.id)) {
-                localStorage.setItem('fitvision_history', JSON.stringify([currentStats, ...history]));
-            }
-        }
-
-        // Auto-request AI analysis if there are errors
-        if (storedErrors.length > 0 && currentStats) {
-            fetchAIAdvice(storedErrors, currentStats);
-        }
-    }, []);
-
-    const fetchAIAdvice = async (errorList: ErrorRecord[], sessionStats: any) => {
+    const fetchAIAdvice = useCallback(async (s: WorkoutSession) => {
         setIsLoadingAI(true);
+        setAiFailed(false);
         try {
-            // Build a detailed error summary for the AI
-            const errorSummary = errorList.map((err, i) => {
-                const timestamp = err.elapsedFormatted || err.time;
-                const rep = err.repNumber ? `Rep #${err.repNumber}` : '';
-                const risk = err.riskLabelTh || err.riskLevel || '';
-                const factors = err.riskFactors?.join(', ') || '';
-                return `${i + 1}. [${timestamp}] ${rep} — ${err.title}: ${err.detail} (ความเสี่ยง: ${risk}, ปัจจัย: ${factors})`;
-            }).join('\n');
-
-            const prompt = `คุณเป็นโค้ชฟิตเนสผู้เชี่ยวชาญ ผู้ใช้เพิ่งออกกำลังกายท่า ${sessionStats.exercise} เสร็จ
-
-ข้อมูลการออกกำลังกาย:
-- ท่า: ${sessionStats.exercise}
-- จำนวน Rep: ${sessionStats.completedReps || 0}/${sessionStats.repGoal || 0}
-- คะแนนเฉลี่ย: ${Math.round(sessionStats.avgScore || 0)}%
-- จำนวนข้อผิดพลาดที่พบ: ${errorList.length} ครั้ง
-
-รายละเอียดข้อผิดพลาดตาม Timeline:
-${errorSummary}
-
-กรุณาวิเคราะห์และตอบกลับเป็นภาษา${language === 'th' ? 'ไทย' : 'อังกฤษ'}ในรูปแบบต่อไปนี้:
-1. สรุปปัญหาหลักที่พบ (บอกว่าส่วนไหนของร่างกายผิด)
-2. สาเหตุที่เป็นไปได้ของแต่ละข้อผิดพลาด
-3. วิธีแก้ไขเฉพาะเจาะจงสำหรับแต่ละปัญหา (ให้คำแนะนำที่ปฏิบัติได้จริง)
-4. ท่าบริหารเสริมที่ช่วยแก้ปัญหา (ถ้ามี)
-5. คำแนะนำเพิ่มเติมเรื่องความปลอดภัย`;
-
-            const res = await fetch('/api/ai/analyze', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+            const res = await fetch("/api/ai/analyze", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    exercise: sessionStats.exercise,
-                    errors: errorList.map(e => e.title),
-                    score: Math.round(sessionStats.avgScore || 0),
-                    question: prompt,
-                    language: language,
+                    mode: "session",
+                    language,
+                    exercise: t.camera.exerciseName[s.exerciseId],
+                    completedReps: s.completedReps,
+                    repGoal: s.repGoal,
+                    score: s.avgScore,
+                    errors: s.errors.map((e) => ({
+                        title: e.title,
+                        detail: e.detail,
+                        time: e.elapsedFormatted || e.time,
+                        repNumber: e.repNumber,
+                        riskFactors: e.riskFactors,
+                    })),
                 }),
             });
-
-            if (res.ok) {
-                const data = await res.json();
-                setAiAdvice(data.response || data.answer || '');
-            }
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.response) throw new Error(data.error || `HTTP ${res.status}`);
+            setAiAdvice(data.response);
+            // Cache so revisiting this session doesn't call the AI again
+            updateSessionInHistory(s.id, { aiAdvice: data.response });
+            setCurrentSession({ ...s, aiAdvice: data.response }, false);
         } catch (err) {
-            console.error('AI advice error:', err);
+            console.error("AI advice error:", err);
+            setAiFailed(true);
         } finally {
             setIsLoadingAI(false);
         }
+    }, [language, t]);
+
+    useEffect(() => {
+        const { session: current, fresh: isFresh } = loadCurrentSession();
+        setSession(current);
+        setFresh(isFresh);
+        setLoaded(true);
+        if (!current) return;
+        if (current.aiAdvice) {
+            setAiAdvice(current.aiAdvice);
+        } else if (isFresh && current.errors.length > 0) {
+            // Only auto-analyse a session that was just recorded; older ones get a button.
+            fetchAIAdvice(current);
+        }
+        if (isFresh) {
+            markCurrentSessionSeen();
+            // Clips finish recording up to 3 s after the set ends — pick them up.
+            const id = setTimeout(() => {
+                const again = loadCurrentSession().session;
+                if (again && again.id === current.id) setSession((prev) => (prev ? { ...prev, errors: again.errors } : prev));
+            }, 3500);
+            return () => clearTimeout(id);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const grouped = useMemo(() => groupErrors(errors), [errors]);
+    const top = grouped[0];
+    const topRecords = top ? errors.filter((e) => e.title === top[0]) : [];
+    const topExample: ErrorRecord | undefined = topRecords.find((e) => e.url) || topRecords[0];
+    const clips = errors.filter((e) => e.url);
+
+    // Which reps had a problem (repNumber = reps completed when it was detected → the next rep)
+    const repCount = session ? Math.max(session.completedReps, 0) : 0;
+    const badReps = useMemo(() => {
+        const set = new Set<number>();
+        errors.forEach((e) => {
+            if (e.repNumber === undefined) return;
+            set.add(Math.min(Math.max(1, e.repNumber + 1), Math.max(1, repCount)));
+        });
+        return set;
+    }, [errors, repCount]);
+
+    const openDetail = (error: ErrorRecord) => {
+        sessionStorage.setItem("fitvision_history_detail_data", JSON.stringify({ ...error, exercise: exerciseLabel }));
+        router.push("/history/detail");
     };
 
-    // Risk color helper
-    const getRiskBadge = (level?: string, color?: string) => {
-        const c = color || '#f59e0b';
-        const l = level || 'unknown';
+    if (!loaded) return <DashboardLayout><div className="min-h-[50vh]" /></DashboardLayout>;
+
+    if (!session) {
         return (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border" style={{ color: c, borderColor: c + '40', backgroundColor: c + '15' }}>
-                {l.toUpperCase()}
-            </span>
+            <DashboardLayout>
+                <div className="max-w-md mx-auto px-5 py-20 text-center flex flex-col items-center gap-4">
+                    <span className="material-symbols-outlined text-5xl text-slate-500">insights</span>
+                    <h1 className="text-2xl font-semibold text-white">{t.summary.noSessionTitle}</h1>
+                    <p className="text-slate-300">{t.summary.noSessionDesc}</p>
+                    <Link href="/" className="mt-2 h-12 px-6 rounded-xl bg-primary text-background-dark font-semibold flex items-center">
+                        {t.summary.startWorkout}
+                    </Link>
+                </div>
+            </DashboardLayout>
         );
-    };
+    }
+
+    const score = session.avgScore;
+    const goalReached = session.repGoal > 0 && session.completedReps >= session.repGoal;
+    const locale = language === "th" ? "th-TH" : "en-US";
 
     return (
         <DashboardLayout>
-            <div className="flex flex-col min-h-screen">
-                <div className="max-w-4xl mx-auto w-full p-6 md:p-8 flex flex-col gap-10">
-                    <div className="text-center flex flex-col items-center gap-4 animate-stagger-summary">
-                        <div className="h-20 w-20 rounded-full bg-primary/20 flex items-center justify-center mb-2">
-                            <span className="material-symbols-outlined text-primary text-5xl font-bold">check_circle</span>
+            <div className="max-w-3xl mx-auto w-full px-4 md:px-8 py-6 flex flex-col gap-6 pb-16">
+                {/* ── Header: score + what was done ── */}
+                <header className="flex items-center gap-5">
+                    {score === null ? (
+                        <div className="size-24 rounded-full border-4 border-white/10 flex items-center justify-center text-center text-xs text-slate-400 p-2 shrink-0">
+                            {t.home.noScore}
                         </div>
-                        <h1 className="text-4xl lg:text-5xl font-bold tracking-tight text-slate-100 flex flex-col items-center gap-2">
-                            <span>{t.summary.title}</span>
-                            {stats && <span className="text-xl md:text-2xl text-primary font-medium tracking-normal mt-1 capitalize">{stats.exercise}</span>}
-                        </h1>
-                        <p className="text-slate-400 max-w-md mx-auto">
-                            {t.summary.subtitle}
+                    ) : (
+                        <div
+                            className="size-24 rounded-full flex items-center justify-center shrink-0"
+                            style={{ background: `conic-gradient(#39FF14 0 ${score}%, rgba(255,255,255,0.1) ${score}% 100%)` }}
+                            role="img"
+                            aria-label={`${t.summary.formAccuracy} ${score}%`}
+                        >
+                            <div className="size-[78px] rounded-full bg-background-dark flex flex-col items-center justify-center">
+                                <span className="text-2xl font-bold text-white tabular-nums leading-none">{score}</span>
+                                <span className="text-xs text-slate-400 mt-0.5">{t.summary.formAccuracy}</span>
+                            </div>
+                        </div>
+                    )}
+                    <div className="min-w-0">
+                        <p className="text-sm text-slate-400">
+                            {new Date(session.timestamp).toLocaleString(locale, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                         </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
-                        {/* Summary Widget: Form Accuracy */}
-                        <div className="bg-black/40 rounded-2xl p-6 md:p-8 border border-white/10 flex flex-col items-center text-center shadow-lg animate-stagger-summary">
-                            <span className="text-slate-400 text-xs md:text-sm font-medium uppercase tracking-wider mb-2">{t.summary.formAccuracy}</span>
-                            <div className="flex items-start">
-                                <p className="text-4xl lg:text-5xl font-bold text-primary">{stats ? Math.round(stats.avgScore) : 0}%</p>
-                            </div>
-                        </div>
-
-                        {/* Summary Widget: Repetition Progress */}
-                        <div className="bg-black/40 rounded-2xl p-6 md:p-8 border border-white/10 flex flex-col items-center justify-center text-center shadow-lg animate-stagger-summary">
-                            <span className="text-slate-400 text-xs md:text-sm font-medium uppercase tracking-wider mb-2">{t.summary.workoutProgress}</span>
-                            <div className="flex items-end gap-1">
-                                <p className="text-4xl lg:text-5xl font-bold text-blue-400">{stats?.completedReps || 0}</p>
-                                <p className="text-xl md:text-2xl font-medium text-slate-500 mb-1">/ {stats?.repGoal || 0}</p>
-                            </div>
-                            {stats?.repGoal > 0 && stats?.completedReps >= stats?.repGoal && (
-                                <span className="mt-2 text-[10px] md:text-xs font-bold text-green-400 bg-green-400/10 px-2 py-0.5 rounded border border-green-400/20">{t.summary.goalReached}</span>
-                            )}
-                        </div>
-
-                        {/* Summary Widget: Total Mistakes */}
-                        <div className="bg-black/40 rounded-2xl p-6 md:p-8 border border-white/10 flex flex-col items-center text-center shadow-lg animate-stagger-summary">
-                            <span className="text-slate-400 text-xs md:text-sm font-medium uppercase tracking-wider mb-2">{t.summary.capturedMistakes}</span>
-                            <div className="flex flex-col items-center">
-                                <p className="text-4xl lg:text-5xl font-bold text-red-400">{errors.length}</p>
-                                <span className={`mt-2 text-[10px] md:text-xs font-bold px-2 py-0.5 rounded border ${errors.length > 3 ? 'text-red-500 bg-red-500/10 border-red-500/20' : errors.length > 0 ? 'text-orange-400 bg-orange-400/10 border-orange-400/20' : 'text-primary bg-primary/10 border-primary/20'}`}>
-                                    {errors.length > 3 ? t.summary.riskLevels.high : errors.length > 0 ? t.summary.riskLevels.moderate : t.summary.riskLevels.safe}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* ── Error Timeline (NEW) ── */}
-                    {errors.length > 0 && (
-                        <div className="bg-surface-dark border border-white/10 rounded-2xl p-6 animate-stagger-summary">
-                            <h3 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
-                                <span className="material-symbols-outlined text-orange-400">timeline</span>
-                                {t.summary.errorTimeline}
-                            </h3>
-                            <div className="relative">
-                                {/* Timeline line */}
-                                <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-white/10"></div>
-                                <div className="space-y-4">
-                                    {errors.map((error, idx) => (
-                                        <div key={idx} className="relative pl-10">
-                                            {/* Timeline dot */}
-                                            <div className="absolute left-2.5 top-3 w-3 h-3 rounded-full border-2" style={{ borderColor: error.riskColor || '#f59e0b', backgroundColor: error.riskColor ? error.riskColor + '40' : '#f59e0b40' }}></div>
-                                            
-                                            <div className="bg-black/40 border border-white/5 rounded-xl p-4">
-                                                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                                    {/* Timestamp badge */}
-                                                    <span className="text-xs font-mono font-bold text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded border border-blue-400/20">
-                                                        ⏱ {error.elapsedFormatted || error.time}
-                                                    </span>
-                                                    {/* Rep badge */}
-                                                    {error.repNumber !== undefined && error.repNumber > 0 && (
-                                                        <span className="text-xs font-bold text-slate-400 bg-white/5 px-2 py-0.5 rounded border border-white/10">
-                                                            {t.summary.repPrefix}{error.repNumber}
-                                                        </span>
-                                                    )}
-                                                    {/* Risk badge */}
-                                                    {getRiskBadge(error.riskLevel, error.riskColor)}
-                                                </div>
-                                                
-                                                <h4 className="text-sm font-bold text-red-400 mb-1">{error.title}</h4>
-                                                <p className="text-xs text-slate-400 mb-2">{error.detail}</p>
-                                                
-                                                {/* Risk factors */}
-                                                {error.riskFactors && error.riskFactors.length > 0 && (
-                                                    <div className="flex flex-wrap gap-1">
-                                                        {error.riskFactors.map((factor, fi) => (
-                                                            <span key={fi} className="text-[10px] text-orange-300/70 bg-orange-500/10 px-2 py-0.5 rounded">
-                                                                {factor}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Breakdown of Frequent Errors */}
-                    {errors.length > 0 && (
-                        <div className="bg-surface-dark border border-white/10 rounded-2xl p-6 animate-stagger-summary">
-                            <h3 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
-                                <span className="material-symbols-outlined text-orange-400">troubleshoot</span>
-                                {t.summary.frequentMistakes}
-                            </h3>
-                            <div className="flex flex-wrap gap-3">
-                                {groupErrors(errors).map(([title, count], idx) => (
-                                    <div key={idx} className="flex items-center justify-between bg-black/40 border border-white/5 rounded-xl px-4 py-3 min-w-[200px] flex-1">
-                                        <span className="text-sm font-bold text-slate-300 truncate mr-3">{title}</span>
-                                        <span className="bg-red-500/20 text-red-400 text-xs font-bold px-2 py-1 rounded">x{count}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* ── AI Correction Advice (NEW) ── */}
-                    {errors.length > 0 && (
-                        <div className="bg-gradient-to-br from-purple-500/10 to-blue-500/10 border border-purple-500/20 rounded-2xl p-6 animate-stagger-summary">
-                            <h3 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
-                                <span className="material-symbols-outlined text-purple-400">psychology</span>
-                                {t.summary.aiAnalysisTitle}
-                            </h3>
-                            {isLoadingAI ? (
-                                <div className="flex items-center gap-3 py-8 justify-center">
-                                    <div className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
-                                    <span className="text-sm text-purple-300">{t.summary.aiAnalyzing}</span>
-                                </div>
-                            ) : aiAdvice ? (
-                                <div className="prose prose-invert prose-sm max-w-none">
-                                    <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
-                                        {aiAdvice}
-                                    </div>
-                                </div>
+                        <h1 className="text-2xl md:text-3xl font-semibold text-white leading-tight">
+                            {exerciseLabel} {session.completedReps}/{session.repGoal} {t.home.repsUnit}
+                        </h1>
+                        <p className="text-sm mt-1">
+                            {goalReached && <span className="text-primary font-medium mr-2">{t.summary.goalReached}</span>}
+                            {errors.length === 0 ? (
+                                <span className="text-primary">{t.summary.errorReplays.flawlessTitle}</span>
                             ) : (
-                                <div className="text-center py-6">
-                                    <button
-                                        onClick={() => stats && fetchAIAdvice(errors, stats)}
-                                        className="bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 px-6 py-3 rounded-xl font-bold text-sm transition-all flex items-center gap-2 mx-auto"
-                                    >
-                                        <span className="material-symbols-outlined text-base">auto_awesome</span>
-                                        {t.summary.getAiAdvice}
-                                    </button>
-                                </div>
+                                <span className="text-orange-300">{errors.length} {t.summary.capturedMistakes}</span>
                             )}
-                        </div>
-                    )}
+                        </p>
+                        {score === null && <p className="text-xs text-slate-400 mt-1">{t.summary.scoreUnavailable}</p>}
+                    </div>
+                </header>
 
-                    <section className="flex flex-col gap-6 animate-stagger-summary">
-                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-                            <h3 className="text-2xl font-bold text-slate-100">{t.summary.errorReplays.title}</h3>
-                            <span className="px-3 py-1 rounded-full bg-red-500/20 text-red-400 text-xs font-bold border border-red-500/30">
-                                {errors.length > 0 ? t.summary.errorReplays.reviewRecommended : t.summary.errorReplays.perfectSet}
-                            </span>
-                        </div>
+                {/* ── Rep-by-rep strip ── */}
+                {repCount > 0 && (
+                    <section aria-label={t.summary.workoutProgress}>
+                        <h2 className="text-sm text-slate-300 font-medium mb-2">{t.summary.workoutProgress}</h2>
+                        <ol className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.min(repCount, 12)}, minmax(0, 1fr))` }}>
+                            {Array.from({ length: repCount }, (_, i) => i + 1).map((n) => {
+                                const bad = badReps.has(n);
+                                return (
+                                    <li
+                                        key={n}
+                                        title={`${t.summary.repPrefix}${n}`}
+                                        className={`h-9 rounded-lg flex items-center justify-center text-xs font-bold tabular-nums ${bad ? "bg-orange-400 text-black" : "bg-primary/10 text-primary border border-primary/25"}`}
+                                    >
+                                        {bad ? "!" : n}
+                                    </li>
+                                );
+                            })}
+                        </ol>
+                    </section>
+                )}
 
-                        {errors.length === 0 ? (
-                            <div className="p-8 bg-black/40 rounded-xl border border-primary/20 flex flex-col items-center text-center">
-                                <span className="material-symbols-outlined text-primary text-5xl mb-4">emoji_events</span>
-                                <h4 className="text-xl font-bold text-white mb-2">{t.summary.errorReplays.flawlessTitle}</h4>
-                                <p className="text-slate-400">{t.summary.errorReplays.flawlessDesc}</p>
+                {/* ── Fix #1 ── */}
+                {top && topExample && (
+                    <section className="rounded-3xl p-5 bg-orange-500/10 border border-orange-400/30 flex flex-col gap-3">
+                        <p className="text-sm font-semibold text-orange-300">
+                            {t.summary.topFix} · {t.summary.foundTimes.replace("{n}", String(top[1]))}
+                        </p>
+                        <h2 className="text-xl font-semibold text-white">{top[0]}</h2>
+                        <div className="flex flex-col sm:flex-row gap-4">
+                            {topExample.url && (
+                                <video src={topExample.url} className="w-full sm:w-56 aspect-video rounded-xl bg-black object-cover" controls loop muted playsInline />
+                            )}
+                            <div className="text-sm text-slate-200 leading-relaxed flex flex-col gap-2">
+                                <p>{topExample.detail}</p>
+                                {topExample.recommendation && <p className="text-slate-300">{topExample.recommendation}</p>}
+                                <button type="button" onClick={() => openDetail(topExample)} className="self-start text-orange-300 font-semibold hover:underline min-h-11 cursor-pointer">
+                                    {t.summary.deepAnalysis} →
+                                </button>
                             </div>
+                        </div>
+                    </section>
+                )}
+
+                {/* ── Other mistakes ── */}
+                {grouped.length > 1 && (
+                    <section>
+                        <h2 className="text-sm text-slate-300 font-medium mb-2">{t.summary.frequentMistakes}</h2>
+                        <ul className="rounded-2xl border border-white/10 bg-surface-dark divide-y divide-white/5">
+                            {grouped.slice(1).map(([title, count]) => {
+                                const example = errors.find((e) => e.title === title);
+                                return (
+                                    <li key={title}>
+                                        <button
+                                            type="button"
+                                            onClick={() => example && openDetail(example)}
+                                            className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-white/[0.04] cursor-pointer"
+                                        >
+                                            <span className="text-white">{title}</span>
+                                            <span className="text-sm text-slate-400 shrink-0">×{count} <span className="material-symbols-outlined align-middle text-base">chevron_right</span></span>
+                                        </button>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    </section>
+                )}
+
+                {/* ── AI coach analysis ── */}
+                {errors.length > 0 && (
+                    <section className="rounded-3xl p-5 bg-surface-dark border border-white/10">
+                        <h2 className="text-base font-semibold text-white mb-3 flex items-center gap-2">
+                            <span className="material-symbols-outlined text-primary">smart_toy</span>
+                            {t.summary.aiAnalysisTitle}
+                        </h2>
+                        {isLoadingAI ? (
+                            <div className="flex items-center gap-3 py-4" role="status">
+                                <div className="size-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                                <span className="text-sm text-slate-300">{t.summary.aiAnalyzing}</span>
+                            </div>
+                        ) : aiAdvice ? (
+                            <div className="prose-chat" dangerouslySetInnerHTML={{ __html: renderMarkdown(aiAdvice) }} />
                         ) : (
-                            <div className="grid grid-cols-1 gap-6">
-                                {errors.map((error, idx) => (
-                                    <div key={idx} className="flex flex-col md:flex-row bg-black/40 rounded-2xl overflow-hidden border border-white/10 shadow-lg group">
-                                        <div className="md:w-1/2 bg-black relative aspect-video flex-shrink-0">
-                                            <video
-                                                src={error.url}
-                                                className="w-full h-full object-cover"
-                                                controls
-                                                autoPlay
-                                                loop
-                                                muted
-                                                playsInline
-                                            />
-                                            <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 backdrop-blur-md rounded text-xs font-bold text-red-400 border border-red-500/30 flex items-center gap-1">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></div>
-                                                {t.summary.errorReplays.mistakeClip}
-                                            </div>
-                                            {/* Timestamp overlay */}
-                                            {error.elapsedFormatted && (
-                                                <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/70 backdrop-blur-md rounded text-xs font-mono font-bold text-blue-400 border border-blue-500/30">
-                                                    ⏱ {error.elapsedFormatted}
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="p-5 md:p-6 flex flex-col justify-center gap-3">
-                                            <div className="flex items-start justify-between">
-                                                <h4 className="text-xl font-bold text-red-400">{error.title}</h4>
-                                                <div className="flex flex-col items-end gap-1">
-                                                    <span className="text-xs text-slate-500 bg-black/50 px-2 py-1 rounded">{error.time}</span>
-                                                    {error.riskLabelTh && (
-                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ color: error.riskColor, backgroundColor: (error.riskColor || '#f59e0b') + '15' }}>
-                                                            {error.riskLabelTh}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <p className="text-slate-300 text-sm leading-relaxed border-l-2 border-red-500/50 pl-3">
-                                                {error.detail}
-                                            </p>
-                                            {/* Risk factors inline */}
-                                            {error.riskFactors && error.riskFactors.length > 0 && (
-                                                <div className="space-y-1">
-                                                    {error.riskFactors.map((f, fi) => (
-                                                        <p key={fi} className="text-[11px] text-orange-300/70 flex items-start gap-1">
-                                                            <span className="material-symbols-outlined text-xs mt-0.5 text-orange-400/50">warning</span>
-                                                            {f}
-                                                        </p>
-                                                    ))}
-                                                </div>
-                                            )}
-                                            {/* Recommendation */}
-                                            {error.recommendation && (
-                                                <div className="bg-blue-500/5 border border-blue-500/10 rounded-lg p-3 mt-1">
-                                                    <p className="text-[11px] text-blue-300/80 flex items-start gap-1">
-                                                        <span className="material-symbols-outlined text-xs mt-0.5 text-blue-400/60">tips_and_updates</span>
-                                                        {error.recommendation}
-                                                    </p>
-                                                </div>
-                                            )}
-                                            <div className="mt-2 text-xs text-slate-500 flex items-center gap-1">
-                                                <span className="material-symbols-outlined text-sm">info</span>
-                                                {t.summary.errorReplays.clipDesc}
-                                            </div>
-                                            <div className="mt-4 flex gap-2">
-                                                <button
-                                                    onClick={() => {
-                                                        sessionStorage.setItem('fitvision_history_detail_data', JSON.stringify(error));
-                                                        router.push('/history/detail');
-                                                    }}
-                                                    className="w-full bg-slate-800 hover:bg-primary/20 hover:text-primary text-white border border-slate-700 hover:border-primary/50 text-sm font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-2"
-                                                >
-                                                    <span className="material-symbols-outlined text-sm">troubleshoot</span>
-                                                    {t.summary.deepAnalysis}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
+                            <div className="flex flex-col items-start gap-2">
+                                {aiFailed && <p className="text-sm text-orange-300">{t.detail.aiFailed}</p>}
+                                <button
+                                    type="button"
+                                    onClick={() => fetchAIAdvice(session)}
+                                    className="h-11 px-5 rounded-xl border border-white/15 text-white font-medium flex items-center gap-2 hover:bg-white/5 cursor-pointer"
+                                >
+                                    <span className="material-symbols-outlined text-base">auto_awesome</span>
+                                    {aiFailed ? t.detail.retry : t.summary.getAiAdvice}
+                                </button>
                             </div>
                         )}
                     </section>
+                )}
 
-                    <div className="flex flex-col sm:flex-row gap-4 pt-6 pb-12 animate-stagger-summary">
-                        <Link
-                            href="/camera"
-                            className="flex-1 h-14 bg-primary text-background-dark font-bold text-lg rounded-xl flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.98] transition-all"
-                        >
-                            <span className="material-symbols-outlined">replay</span>
-                            {t.summary.actions.tryAgain}
-                        </Link>
-                        <Link
-                            href="/"
-                            className="flex-1 h-14 bg-transparent text-slate-100 border-2 border-primary/20 font-bold text-lg rounded-xl flex items-center justify-center gap-2 hover:bg-primary/5 hover:border-primary/50 active:scale-[0.98] transition-all"
-                        >
-                            <span className="material-symbols-outlined">home</span>
-                            {t.summary.actions.backToDashboard}
-                        </Link>
-                    </div>
+                {/* ── Clips ── */}
+                {errors.length > 0 && (
+                    <section>
+                        <h2 className="text-sm text-slate-300 font-medium mb-2">{t.summary.errorReplays.title}</h2>
+                        {clips.length === 0 ? (
+                            <p className="text-sm text-slate-400">{fresh ? t.summary.errorReplays.clipDesc : t.summary.clipUnavailable}</p>
+                        ) : (
+                            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {clips.map((error, idx) => (
+                                    <li key={`${error.time}-${idx}`} className="rounded-2xl overflow-hidden border border-white/10 bg-surface-dark">
+                                        <video src={error.url} className="w-full aspect-video bg-black object-cover" controls loop muted playsInline preload="metadata" />
+                                        <button type="button" onClick={() => openDetail(error)} className="w-full text-left p-3 hover:bg-white/[0.04] cursor-pointer">
+                                            <span className="block text-sm font-semibold text-white">{error.title}</span>
+                                            <span className="block text-xs text-slate-400">
+                                                {error.elapsedFormatted || error.time}
+                                                {error.repNumber !== undefined ? ` · ${t.summary.repPrefix}${Math.min(error.repNumber + 1, Math.max(1, repCount))}` : ""}
+                                            </span>
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </section>
+                )}
+
+                {/* ── Next step ── */}
+                <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                    <Link
+                        href={cameraHref(session.exerciseId, session.repGoal || 12)}
+                        className="flex-1 h-14 bg-primary text-background-dark font-semibold text-lg rounded-2xl flex items-center justify-center gap-2 hover:brightness-110"
+                    >
+                        <span className="material-symbols-outlined">replay</span>
+                        {t.summary.actions.tryAgain}
+                    </Link>
+                    <Link
+                        href="/"
+                        className="flex-1 h-14 border border-white/15 text-white font-medium text-lg rounded-2xl flex items-center justify-center gap-2 hover:bg-white/5"
+                    >
+                        <span className="material-symbols-outlined">home</span>
+                        {t.summary.actions.backToDashboard}
+                    </Link>
                 </div>
             </div>
         </DashboardLayout>

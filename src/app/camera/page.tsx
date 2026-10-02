@@ -6,15 +6,26 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import { useLanguage } from "@/context/LanguageContext";
 import { CameraMobileHUD, CameraDesktopPanel } from "@/components/camera/CameraOverlays";
-import { calculateAngle, Landmark } from "@/lib/poseUtils";
+import { calculateAngle, dist2d } from "@/lib/poseUtils";
+import { isSupabaseConfigured } from "@/lib/supabaseClient";
+import {
+    ErrorRecord,
+    ExerciseId,
+    WorkoutSession,
+    saveSessionToHistory,
+    setCurrentSession,
+    toExerciseId,
+} from "@/lib/workoutStore";
+import { loadWorkoutPrefs, speak, WorkoutPrefs } from "@/lib/userPrefs";
 
 function CameraContent() {
     const searchParams = useSearchParams();
     const { t, language } = useLanguage();
-    const model = searchParams.get("model")?.toLowerCase() || "benchpress";
-    const repsParam = parseInt(searchParams.get("reps") || "12", 10);
+    const model: ExerciseId = toExerciseId(searchParams.get("model") || "benchpress");
+    const parsedReps = parseInt(searchParams.get("reps") || "12", 10);
+    const repsParam = Number.isFinite(parsedReps) ? Math.min(50, Math.max(1, parsedReps)) : 12;
 
-    const [currentExercise, setCurrentExercise] = useState(model);
+    const [currentExercise, setCurrentExercise] = useState<ExerciseId>(model);
     const [repGoal, setRepGoal] = useState(repsParam);
     const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
     const [isTrackingStarted, setIsTrackingStarted] = useState(false);
@@ -24,26 +35,58 @@ function CameraContent() {
     const [currentReps, setCurrentReps] = useState(0);
     const [isSetupMinimized, setIsSetupMinimized] = useState(false);
 
+    const repStateRef = useRef<"up" | "down">("up");
+    const localRepCountRef = useRef<number>(0);
+
+    // Latest translations / language / prefs for callbacks created once inside effects
+    const tRef = useRef(t);
+    const languageRef = useRef(language);
+    useEffect(() => { tRef.current = t; languageRef.current = language; }, [t, language]);
+    const prefsRef = useRef<WorkoutPrefs>({ voiceFeedback: true, autoSaveClips: true, countdown: true });
+    useEffect(() => { prefsRef.current = loadWorkoutPrefs(); }, []);
+
+    // Errors and scores of THIS session only (never carried over from earlier sessions)
+    const errorsRef = useRef<ErrorRecord[]>([]);
+    const sessionEndedRef = useRef(false);
+    const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    useEffect(() => () => { if (countdownTimerRef.current) clearInterval(countdownTimerRef.current); }, []);
+
+    const beginTracking = () => {
+        errorsRef.current = [];
+        statsRef.current.scores = [];
+        recentPredictions.current = [];
+        sessionEndedRef.current = false;
+        lastErrorTimeRef.current = 0;
+        repStateRef.current = "up";
+        localRepCountRef.current = 0;
+        setCurrentReps(0);
+        try { sessionStorage.removeItem('fitvision_errors'); } catch { /* ignore */ }
+        setIsTrackingStarted(true);
+        isTrackingStartedRef.current = true;
+        workoutStartTimeRef.current = Date.now();
+    };
+
     const startWorkoutCountdown = () => {
-        setCountdown(3); 
+        if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+        if (!prefsRef.current.countdown) {
+            beginTracking();
+            return;
+        }
+        setCountdown(3);
         let count = 3;
-        const timer = setInterval(() => {
+        countdownTimerRef.current = setInterval(() => {
             count -= 1;
             if (count > 0) setCountdown(count);
-            else { 
-                clearInterval(timer); 
-                setCountdown(null); 
-                setIsTrackingStarted(true); 
-                isTrackingStartedRef.current = true; 
-                workoutStartTimeRef.current = Date.now(); 
+            else {
+                if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+                countdownTimerRef.current = null;
+                setCountdown(null);
+                beginTracking();
             }
         }, 1000);
     };
 
-    const repStateRef = useRef<"up" | "down">("up");
-    const localRepCountRef = useRef<number>(0);
-
-    const getExerciseName = (ex: string) => {
+    const getExerciseName = (ex: ExerciseId) => {
         if (ex === "squat") return t.camera.exerciseName.squat;
         if (ex === "deadlift") return t.camera.exerciseName.deadlift;
         return t.camera.exerciseName.benchpress;
@@ -129,13 +172,7 @@ function CameraContent() {
         videoElement.muted = true;
 
         isMockVideoPlaying.current = true;
-        setIsTrackingStarted(true);
-        isTrackingStartedRef.current = true;
-        workoutStartTimeRef.current = Date.now();
-
-        repStateRef.current = "up";
-        localRepCountRef.current = 0;
-        setCurrentReps(0);
+        beginTracking();
 
         setFeedbackDetail(t.camera.feedback.processingSim);
 
@@ -175,6 +212,8 @@ function CameraContent() {
         setFeedbackDetail(t.camera.feedback.waitForAI);
         setFormScore(100);
         setCurrentReps(0);
+        localRepCountRef.current = 0;
+        repStateRef.current = "up";
     }, [currentExercise, t]);
 
     useEffect(() => {
@@ -190,12 +229,10 @@ function CameraContent() {
         if (!Pose || !Camera) return;
 
         let camera: any = null;
-        let pose: any = null;
         let isUnmounted = false;
         let frameCount = 0;
         let isPredicting = false;
-        let repState = "up";
-        let localRepCount = 0;
+        let lastSpokenAt = 0;
 
         const initMediaPipe = async () => {
             if (!videoRef.current || !canvasRef.current) return;
@@ -229,11 +266,6 @@ function CameraContent() {
                 if (canvasElement.width !== videoElement.videoWidth) {
                     canvasElement.width = videoElement.videoWidth;
                     canvasElement.height = videoElement.videoHeight;
-
-                    if (!sessionStorage.getItem('fitvision_errors_cleared')) {
-                        sessionStorage.removeItem('fitvision_errors');
-                        sessionStorage.setItem('fitvision_errors_cleared', 'true');
-                    }
                 }
 
                 canvasCtx.save();
@@ -272,9 +304,11 @@ function CameraContent() {
                         calculateAngle(lm[12], lm[24], lm[26]),  // [5] right_hip_angle
                         calculateAngle(lm[23], lm[25], lm[27]),  // [6] left_knee_angle
                         calculateAngle(lm[24], lm[26], lm[28]),  // [7] right_knee_angle
-                        Math.abs(lm[11].x - lm[12].x),           // [8] shoulder_width
-                        Math.abs(lm[23].x - lm[24].x),           // [9] hip_width
-                        Math.abs((lm[11].y + lm[12].y) / 2 - (lm[23].y + lm[24].y) / 2), // [10] torso_length
+                        // Distances must be computed exactly like training (extract_features.py):
+                        // 2D Euclidean, torso = left shoulder → left hip. See AGENTS.md Gotcha #12.
+                        dist2d(lm[11], lm[12]),                  // [8] shoulder_width
+                        dist2d(lm[23], lm[24]),                  // [9] hip_width
+                        dist2d(lm[11], lm[23]),                  // [10] torso_length
                     ];
                     // Compute symmetry from angles already calculated above
                     const elbow_symmetry = Math.abs(features[0] - features[1]);  // [11]
@@ -311,6 +345,10 @@ function CameraContent() {
                             if (repStateRef.current === "down") {
                                 localRepCountRef.current += 1;
                                 setCurrentReps(localRepCountRef.current);
+                                if (prefsRef.current.voiceFeedback) {
+                                    speak(String(localRepCountRef.current), languageRef.current);
+                                    lastSpokenAt = Date.now();
+                                }
                             }
                             repStateRef.current = "up";
                         } else if (mainAngle < downThreshold) {
@@ -366,7 +404,6 @@ function CameraContent() {
 
                                 if (res.ok) {
                                     const data = await res.json();
-                                    console.log('[FV] API Response:', { form_correct: data.form_correct, confidence: data.confidence?.toFixed(3) });
 
                                     recentPredictions.current.push({ correct: data.form_correct, confidence: data.confidence });
                                     if (recentPredictions.current.length > 5) recentPredictions.current.shift();
@@ -375,10 +412,17 @@ function CameraContent() {
                                     const incorrectCount = window.filter(p => !p.correct).length;
                                     const isFormCorrect = incorrectCount < Math.ceil(window.length / 2);
 
+                                    const wasGood = isGoodFormRef.current;
                                     setIsGoodForm(isFormCorrect);
                                     isGoodFormRef.current = isFormCorrect;
                                     setFeedbackDetail(data.feedback);
-                                    setFeedbackTitle(isFormCorrect ? t.camera.feedback.goodForm : t.camera.feedback.correctionNeeded);
+                                    setFeedbackTitle(isFormCorrect ? tRef.current.camera.feedback.goodForm : tRef.current.camera.feedback.correctionNeeded);
+
+                                    // Spoken cue when form turns bad — the user is 2–3 m from the screen
+                                    if (wasGood && !isFormCorrect && prefsRef.current.voiceFeedback && Date.now() - lastSpokenAt > 4000) {
+                                        speak(data.feedback || tRef.current.camera.feedback.correctionNeeded, languageRef.current);
+                                        lastSpokenAt = Date.now();
+                                    }
 
                                     let rawScore: number;
                                     if (isFormCorrect) {
@@ -394,7 +438,6 @@ function CameraContent() {
                                         rawScore = Math.max(15, Math.min(55, rawScore));
                                     }
                                     const currentScore = Math.round(Math.max(0, Math.min(100, rawScore)));
-                                    console.log('[FV] Score Update:', { isFormCorrect, incorrectCount, windowSize: window.length, currentScore });
 
                                     setFormScore(currentScore);
                                     statsRef.current.scores.push(currentScore);
@@ -417,61 +460,68 @@ function CameraContent() {
                                         if (now - lastErrorTimeRef.current > 6000) {
                                             lastErrorTimeRef.current = now;
 
-                                            try {
-                                                if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-                                                    mediaRecorderRef.current.stop();
-                                                }
-                                                const stream = (canvasElement as any).captureStream(30);
-                                                const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-                                                const chunks: Blob[] = [];
+                                            // Record the mistake right away so it is counted even if
+                                            // the workout ends before the clip finishes recording.
+                                            const elapsedSec = Math.round((now - workoutStartTimeRef.current) / 1000);
+                                            const errorRecord: ErrorRecord = {
+                                                title: data.error_type || tRef.current.camera.feedback.correctionNeeded,
+                                                detail: data.feedback,
+                                                time: new Date(now).toLocaleTimeString(),
+                                                elapsedSeconds: elapsedSec,
+                                                elapsedFormatted: `${Math.floor(elapsedSec / 60)}:${(elapsedSec % 60).toString().padStart(2, '0')}`,
+                                                repNumber: localRepCountRef.current,
+                                                riskLevel: data.risk_assessment?.risk_level || 'unknown',
+                                                riskScore: data.risk_assessment?.risk_score || 0,
+                                                riskLabelTh: data.risk_assessment?.risk_label_th || '',
+                                                riskColor: data.risk_assessment?.risk_color || '#f59e0b',
+                                                riskFactors: data.risk_assessment?.risk_factors || [],
+                                                recommendation: data.risk_assessment?.recommendation || '',
+                                                exercise: exercise,
+                                            };
+                                            errorsRef.current.push(errorRecord);
+                                            try { sessionStorage.setItem('fitvision_errors', JSON.stringify(errorsRef.current)); } catch { /* ignore */ }
 
-                                                recorder.ondataavailable = (e) => {
-                                                    if (e.data.size > 0) chunks.push(e.data);
-                                                };
-
-                                                recorder.onstop = () => {
-                                                    if (chunks.length === 0) return;
-                                                    const blob = new Blob(chunks, { type: 'video/webm' });
-                                                    const url = URL.createObjectURL(blob);
-                                                    const elapsedSec = Math.round((Date.now() - workoutStartTimeRef.current) / 1000);
-                                                    const mins = Math.floor(elapsedSec / 60);
-                                                    const secs = elapsedSec % 60;
-                                                    const errorRecord = {
-                                                        url,
-                                                        title: data.error_type || t.camera.feedback.correctionNeeded,
-                                                        detail: data.feedback,
-                                                        time: new Date().toLocaleTimeString(),
-                                                        elapsedSeconds: elapsedSec,
-                                                        elapsedFormatted: `${mins}:${secs.toString().padStart(2, '0')}`,
-                                                        repNumber: localRepCountRef.current,
-                                                        riskLevel: data.risk_assessment?.risk_level || 'unknown',
-                                                        riskScore: data.risk_assessment?.risk_score || 0,
-                                                        riskLabelTh: data.risk_assessment?.risk_label_th || '',
-                                                        riskColor: data.risk_assessment?.risk_color || '#f59e0b',
-                                                        riskFactors: data.risk_assessment?.risk_factors || [],
-                                                        recommendation: data.risk_assessment?.recommendation || '',
-                                                    };
-                                                    const prevErrors = JSON.parse(sessionStorage.getItem('fitvision_errors') || '[]');
-                                                    sessionStorage.setItem('fitvision_errors', JSON.stringify([...prevErrors, errorRecord]));
-                                                };
-
-                                                recorder.start();
-                                                mediaRecorderRef.current = recorder;
-
-                                                setTimeout(() => {
-                                                    if (recorder.state !== 'inactive') {
-                                                        recorder.stop();
+                                            if (prefsRef.current.autoSaveClips && typeof MediaRecorder !== 'undefined') {
+                                                try {
+                                                    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+                                                        mediaRecorderRef.current.stop();
                                                     }
-                                                }, 3000);
-                                            } catch (err) {
-                                                console.warn("Failed to start on-demand MediaRecorder", err);
+                                                    const stream = (canvasElement as any).captureStream(30);
+                                                    const mimeType = MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : '';
+                                                    const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+                                                    const chunks: Blob[] = [];
+
+                                                    recorder.ondataavailable = (e) => {
+                                                        if (e.data.size > 0) chunks.push(e.data);
+                                                    };
+
+                                                    recorder.onstop = () => {
+                                                        if (chunks.length === 0) return;
+                                                        const blob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' });
+                                                        errorRecord.url = URL.createObjectURL(blob);
+                                                        try { sessionStorage.setItem('fitvision_errors', JSON.stringify(errorsRef.current)); } catch { /* ignore */ }
+                                                    };
+
+                                                    recorder.start();
+                                                    mediaRecorderRef.current = recorder;
+
+                                                    setTimeout(() => {
+                                                        if (recorder.state !== 'inactive') {
+                                                            recorder.stop();
+                                                        }
+                                                    }, 3000);
+                                                } catch (err) {
+                                                    console.warn("Failed to start on-demand MediaRecorder", err);
+                                                }
                                             }
                                         }
                                     }
                                 } else {
                                     const errText = await res.text();
                                     console.error(`API Error ${res.status}:`, errText);
-                                    setFeedbackDetail(`Backend Error: ${res.status}`);
+                                    setFeedbackDetail(res.status === 429 || res.status >= 500
+                                        ? tRef.current.camera.serverBusy
+                                        : `Backend Error: ${res.status}`);
                                 }
                             } catch (e) {
                                 console.error("AI Predict Error", e);
@@ -529,41 +579,49 @@ function CameraContent() {
     }, [areScriptsLoaded, facingMode]);
 
     const endWorkoutData = async () => {
-        const scores = statsRef.current.scores;
-        const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 100;
-        const errors = JSON.parse(sessionStorage.getItem('fitvision_errors') || '[]');
+        // Both the HUD and the "complete" overlay can end a session — only save once.
+        if (sessionEndedRef.current) return;
+        sessionEndedRef.current = true;
+        isTrackingStartedRef.current = false;
 
-        const sessionPayload = {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+        }
+        if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+
+        const scores = statsRef.current.scores;
+        // null (not 100) when the AI server never answered — don't show a fake perfect score
+        const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+        const errors = [...errorsRef.current];
+
+        const sessionPayload: WorkoutSession = {
             id: Date.now().toString(),
-            exercise: statsRef.current.exerciseName,
+            exerciseId: currentExercise,
+            exercise: exerciseName,
             avgScore,
             errorCount: errors.length,
-            completedReps: currentReps,
+            completedReps: localRepCountRef.current,
             repGoal,
             timestamp: new Date().toISOString(),
-            errors: errors
+            errors,
         };
 
-        sessionStorage.setItem('fitvision_session_stats', JSON.stringify(sessionPayload));
+        // Errors array is shared so clip URLs that finish after this point still reach the summary
+        errorsRef.current = errors;
+        setCurrentSession(sessionPayload, true);
+        saveSessionToHistory(sessionPayload);
 
-        // Save to local storage as fallback
-        const history = JSON.parse(localStorage.getItem('fitvision_history') || '[]');
-        history.unshift(sessionPayload);
-        if (history.length > 50) history.pop();
-        localStorage.setItem('fitvision_history', JSON.stringify(history));
-
-        // Save to Supabase
+        if (!isSupabaseConfigured) return;
         try {
             const { supabase } = await import('@/lib/supabaseClient');
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
                 await supabase.from('workout_history').insert({
                     user_id: session.user.id,
-                    exercise_type: statsRef.current.exerciseName,
-                    reps: currentReps,
-                    average_confidence: avgScore
+                    exercise_type: currentExercise,
+                    reps: localRepCountRef.current,
+                    average_confidence: avgScore,
                 });
-                console.log("[FV] Saved workout to Supabase.");
             }
         } catch (e) {
             console.error("Failed to save workout to Supabase", e);
@@ -604,7 +662,7 @@ function CameraContent() {
                             <span className="text-sm font-semibold hidden sm:block">{t.camera.back}</span>
                         </Link>
                         <div className="flex items-center gap-2">
-                            <button onClick={() => setFacingMode(p => p === "user" ? "environment" : "user")}
+                            <button type="button" aria-label={language === "th" ? "สลับกล้องหน้า/หลัง" : "Switch camera"} onClick={() => setFacingMode(p => p === "user" ? "environment" : "user")}
                                 className="lg:hidden flex items-center justify-center w-10 h-10 bg-black/30 backdrop-blur-md rounded-full border border-white/10 text-white/80 active:scale-95 transition-all">
                                 <span className="material-symbols-outlined text-lg">flip_camera_ios</span>
                             </button>
@@ -626,7 +684,7 @@ function CameraContent() {
                             {/* Countdown overlay */}
                             {countdown !== null && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-50">
-                                    <div className="text-8xl md:text-9xl font-black text-primary drop-shadow-[0_0_40px_rgba(57,255,20,0.6)] animate-pulse">{countdown}</div>
+                                    <div className="text-8xl md:text-9xl font-black text-primary drop- ">{countdown}</div>
                                 </div>
                             )}
 
@@ -635,7 +693,7 @@ function CameraContent() {
                                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent pt-6 pb-4 md:pb-6 px-3 md:px-4 z-40">
                                     {isSetupMinimized ? (
                                         /* Collapsed View: Floating Mini Action Bar for 100% Full Camera Framing */
-                                        <div className="max-w-md mx-auto flex items-center justify-between gap-2 bg-[#0a100b]/80 backdrop-blur-xl border border-primary/30 rounded-2xl p-2.5 shadow-[0_10px_35px_rgba(0,0,0,0.85)] animate-in fade-in slide-in-from-bottom-2 duration-200">
+                                        <div className="max-w-md mx-auto flex items-center justify-between gap-2 bg-[#0a100b]/80 backdrop-blur-xl border border-primary/30 rounded-2xl p-2.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
                                             <button
                                                 type="button"
                                                 onClick={() => setIsSetupMinimized(false)}
@@ -650,7 +708,7 @@ function CameraContent() {
                                                 type="button"
                                                 onClick={startWorkoutCountdown}
                                                 disabled={!isModelReady}
-                                                className={`flex-1 py-2.5 px-4 rounded-xl text-xs md:text-sm font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-[0_0_20px_rgba(57,255,20,0.35)] cursor-pointer active:scale-95 touch-manipulation ${
+                                                className={`flex-1 py-2.5 px-4 rounded-xl text-xs md:text-sm font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 touch-manipulation ${
                                                     isModelReady
                                                         ? "bg-primary text-black hover:bg-primary/90"
                                                         : "bg-white/10 text-slate-400 cursor-not-allowed"
@@ -662,21 +720,19 @@ function CameraContent() {
                                         </div>
                                     ) : (
                                         /* Expanded View */
-                                        <div className="max-w-md mx-auto flex flex-col gap-2.5 md:gap-3.5 bg-[#0a100b]/80 backdrop-blur-xl border border-primary/25 rounded-3xl p-3.5 md:p-5 shadow-[0_15px_50px_rgba(0,0,0,0.9)] relative overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
-                                            {/* Subtle top neon ambient glow line */}
-                                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2/3 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent opacity-90" />
+                                        <div className="max-w-md mx-auto flex flex-col gap-2.5 md:gap-3.5 bg-[#0a100b]/80 backdrop-blur-xl border border-primary/25 rounded-3xl p-3.5 md:p-5 relative overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
 
                                             {/* Header: Title + Minimize Button */}
                                             <div className="flex items-center justify-between pb-1 border-b border-white/5">
                                                 <div className="flex items-center gap-2">
-                                                    <div className="size-7 md:size-8 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary shadow-[0_0_12px_rgba(57,255,20,0.25)]">
+                                                    <div className="size-7 md:size-8 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary">
                                                         <span className="material-symbols-outlined text-base md:text-lg font-bold">tune</span>
                                                     </div>
                                                     <div>
                                                         <h3 className="text-white font-black text-xs md:text-sm tracking-tight leading-none">
                                                             {language === "th" ? "ตั้งค่าก่อนเริ่มฝึก" : "Workout Setup"}
                                                         </h3>
-                                                        <span className="text-[9px] md:text-[10px] text-slate-400 font-medium">
+                                                        <span className="text-xs text-slate-400 font-medium">
                                                             {language === "th" ? "เลือกท่าและเป้าหมาย" : "Configure exercise & target"}
                                                         </span>
                                                     </div>
@@ -686,7 +742,7 @@ function CameraContent() {
                                                 <button
                                                     type="button"
                                                     onClick={() => setIsSetupMinimized(true)}
-                                                    className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white text-[11px] font-bold transition-all cursor-pointer active:scale-95 touch-manipulation"
+                                                    className="flex items-center gap-1 min-h-10 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white text-xs font-bold transition-all cursor-pointer active:scale-95 touch-manipulation"
                                                     title={language === "th" ? "ซ่อนการ์ดเพื่อดูมุมกล้องเต็มจอ" : "Minimize to check full camera"}
                                                 >
                                                     <span className="material-symbols-outlined text-sm text-primary">visibility</span>
@@ -696,16 +752,16 @@ function CameraContent() {
                                             </div>
 
                                             {/* ── 3-Point System Telemetry Status Bar ── */}
-                                            <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-black/40 border border-white/10 text-[10px] md:text-xs font-semibold">
+                                            <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-black/40 border border-white/10 text-xs md:text-sm font-semibold">
                                                 {/* 1. Camera */}
                                                 <div className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-xl border transition-all ${
                                                     areScriptsLoaded 
                                                         ? "bg-primary/10 border-primary/30 text-primary" 
                                                         : "bg-white/5 border-white/5 text-slate-400"
                                                 }`}>
-                                                    <span className={`size-1.5 rounded-full shrink-0 ${areScriptsLoaded ? "bg-primary shadow-[0_0_6px_#39ff14]" : "bg-slate-500 animate-pulse"}`} />
+                                                    <span className={`size-1.5 rounded-full shrink-0 ${areScriptsLoaded ? "bg-primary" : "bg-slate-500 animate-pulse"}`} />
                                                     <span className="material-symbols-outlined text-xs shrink-0">{areScriptsLoaded ? "check_circle" : "videocam"}</span>
-                                                    <span className="truncate">{language === "th" ? "กล้อง" : "Camera"}{areScriptsLoaded ? " ✓" : "..."}</span>
+                                                    <span className="truncate">{language === "th" ? "กล้อง" : "Camera"}{areScriptsLoaded ? "" : "…"}</span>
                                                 </div>
 
                                                 {/* 2. Pose AI */}
@@ -714,9 +770,9 @@ function CameraContent() {
                                                         ? "bg-primary/10 border-primary/30 text-primary" 
                                                         : "bg-white/5 border-white/5 text-slate-400"
                                                 }`}>
-                                                    <span className={`size-1.5 rounded-full shrink-0 ${isModelReady ? "bg-primary shadow-[0_0_6px_#39ff14]" : "bg-slate-500 animate-pulse"}`} />
+                                                    <span className={`size-1.5 rounded-full shrink-0 ${isModelReady ? "bg-primary" : "bg-slate-500 animate-pulse"}`} />
                                                     <span className="material-symbols-outlined text-xs shrink-0">{isModelReady ? "check_circle" : "psychology"}</span>
-                                                    <span className="truncate">{language === "th" ? "ตรวจจับท่า" : "Pose AI"}{isModelReady ? " ✓" : "..."}</span>
+                                                    <span className="truncate">{language === "th" ? "ตรวจจับท่า" : "Pose AI"}{isModelReady ? "" : "…"}</span>
                                                 </div>
 
                                                 {/* 3. AI Server */}
@@ -727,17 +783,17 @@ function CameraContent() {
                                                             ? "bg-amber-500/10 border-amber-500/30 text-amber-300"
                                                             : "bg-white/5 border-white/5 text-slate-400"
                                                 }`}>
-                                                    <span className={`size-1.5 rounded-full shrink-0 ${isBackendReady ? "bg-primary shadow-[0_0_6px_#39ff14]" : "bg-amber-400 animate-pulse"}`} />
+                                                    <span className={`size-1.5 rounded-full shrink-0 ${isBackendReady ? "bg-primary" : "bg-amber-400 animate-pulse"}`} />
                                                     <span className="material-symbols-outlined text-xs shrink-0">{isBackendReady ? "check_circle" : "cloud_sync"}</span>
                                                     <span className="truncate">
-                                                        {language === "th" ? "เซิร์ฟเวอร์" : "Server"}{isBackendReady ? " ✓" : "..."}
+                                                        {language === "th" ? "เซิร์ฟเวอร์" : "Server"}{isBackendReady ? "" : "…"}
                                                     </span>
                                                 </div>
                                             </div>
 
                                             {/* Subtle server connecting status message if not ready */}
                                             {!isBackendReady && (
-                                                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200/90 text-[10px] md:text-[11px] leading-tight">
+                                                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200/90 text-xs md:text-sm leading-tight">
                                                     <span className="material-symbols-outlined text-xs text-amber-400 shrink-0">info</span>
                                                     <span className="truncate">
                                                         {language === "th" 
@@ -749,7 +805,7 @@ function CameraContent() {
 
                                             {/* Exercise Selector: 3 Segmented Interactive Cards */}
                                             <div className="flex flex-col gap-1">
-                                                <label className="text-slate-400 text-[10px] md:text-[11px] uppercase tracking-wider font-bold">
+                                                <label className="text-slate-400 text-xs md:text-sm uppercase tracking-wider font-bold">
                                                     {t.camera.warmup.exerciseLabel}
                                                 </label>
                                                 <div className="grid grid-cols-3 gap-1.5 md:gap-2.5">
@@ -778,25 +834,25 @@ function CameraContent() {
                                                             <button
                                                                 key={item.id}
                                                                 type="button"
-                                                                onClick={() => setCurrentExercise(item.id)}
+                                                                onClick={() => setCurrentExercise(item.id as ExerciseId)}
                                                                 className={`flex flex-col items-center justify-center p-2 md:p-3 rounded-2xl border transition-all text-center group cursor-pointer relative touch-manipulation ${
                                                                     isSelected
-                                                                        ? "bg-primary/15 border-primary text-white shadow-[0_0_20px_rgba(57,255,20,0.25)] ring-1 ring-primary/40"
+                                                                        ? "bg-primary/15 border-primary text-white ring-1 ring-primary/40"
                                                                         : "bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/[0.08] text-slate-300 active:scale-95"
                                                                 }`}
                                                             >
                                                                 {isSelected && (
-                                                                    <div className="absolute top-1.5 right-1.5 size-1.5 md:size-2 rounded-full bg-primary shadow-[0_0_8px_#39ff14]" />
+                                                                    <div className="absolute top-1.5 right-1.5 size-1.5 md:size-2 rounded-full bg-primary" />
                                                                 )}
                                                                 <div className={`size-8 md:size-10 rounded-xl flex items-center justify-center mb-1 transition-transform group-hover:scale-110 ${
                                                                     isSelected ? "bg-primary/20 text-primary" : "bg-white/5 text-slate-400 group-hover:text-white"
                                                                 }`}>
                                                                 <span className="material-symbols-outlined text-xl md:text-2xl">{item.icon}</span>
                                                             </div>
-                                                            <span className={`text-[11px] md:text-sm font-black tracking-tight leading-tight ${isSelected ? "text-white" : "text-slate-200"}`}>
+                                                            <span className={`text-sm font-black tracking-tight leading-tight ${isSelected ? "text-white" : "text-slate-200"}`}>
                                                                 {item.name}
                                                             </span>
-                                                            <span className={`text-[8px] md:text-[10px] mt-0.5 font-medium leading-none ${isSelected ? "text-primary/90" : "text-slate-400"}`}>
+                                                            <span className={`text-xs mt-0.5 font-medium leading-none ${isSelected ? "text-primary/90" : "text-slate-400"}`}>
                                                                 {item.focus}
                                                             </span>
                                                         </button>
@@ -806,22 +862,22 @@ function CameraContent() {
                                         </div>
 
                                         {/* Goal Reps Selector with Presets & Stepper */}
-                                        <div className="flex items-center justify-between gap-2 p-2 md:p-2.5 rounded-2xl bg-white/[0.03] border border-white/10">
+                                        <div className="flex flex-wrap items-center justify-between gap-2 p-2 md:p-2.5 rounded-2xl bg-white/[0.03] border border-white/10">
                                             <div className="flex items-center gap-1.5 md:gap-2">
                                                 <div className="size-7 md:size-8 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
                                                     <span className="material-symbols-outlined text-sm md:text-base">flag</span>
                                                 </div>
                                                 <div>
-                                                    <div className="text-white text-[11px] md:text-xs font-bold leading-tight">
+                                                    <div className="text-white text-sm font-bold leading-tight">
                                                         {language === "th" ? "เป้าหมาย" : "Target Reps"}
                                                     </div>
-                                                    <div className="text-slate-400 text-[9px] md:text-[10px] hidden sm:block">
+                                                    <div className="text-slate-400 text-xs hidden sm:block">
                                                         {language === "th" ? "นับรอบและวิเคราะห์ทุกครั้ง" : "AI counts reps & tracks tempo"}
                                                     </div>
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-center gap-1 md:gap-2">
+                                            <div className="flex flex-wrap items-center gap-1 md:gap-2 ml-auto">
                                                 {/* Preset Pills */}
                                                 <div className="flex items-center gap-1">
                                                     {[8, 10, 12, 15].map((preset) => (
@@ -829,9 +885,9 @@ function CameraContent() {
                                                             key={preset}
                                                             type="button"
                                                             onClick={() => setRepGoal(preset)}
-                                                            className={`px-2 py-0.5 md:px-2.5 md:py-1 rounded-lg text-[11px] md:text-xs font-bold transition-all cursor-pointer touch-manipulation ${
+                                                            className={`min-w-10 h-10 px-2 rounded-lg text-sm font-bold transition-all cursor-pointer touch-manipulation ${
                                                                 repGoal === preset
-                                                                    ? "bg-primary text-black shadow-[0_0_10px_rgba(57,255,20,0.3)] font-black"
+                                                                    ? "bg-primary text-black font-black"
                                                                     : "bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
                                                             }`}
                                                         >
@@ -845,17 +901,17 @@ function CameraContent() {
                                                     <button 
                                                         type="button"
                                                         onClick={() => setRepGoal(r => Math.max(1, r - 1))} 
-                                                        className="text-slate-300 hover:text-white w-6 h-6 md:w-7 md:h-7 flex items-center justify-center text-base font-bold rounded-lg hover:bg-white/10 active:scale-90 transition-all cursor-pointer touch-manipulation"
+                                                        className="text-slate-300 hover:text-white w-10 h-10 flex items-center justify-center text-base font-bold rounded-lg hover:bg-white/10 active:scale-90 transition-all cursor-pointer touch-manipulation"
                                                     >
                                                         −
                                                     </button>
-                                                    <span className="text-primary font-black text-sm md:text-base w-6 md:w-7 text-center font-mono">
+                                                    <span className="text-primary font-black text-sm md:text-base w-8 text-center font-mono">
                                                         {repGoal}
                                                     </span>
                                                     <button 
                                                         type="button"
                                                         onClick={() => setRepGoal(r => Math.min(50, r + 1))} 
-                                                        className="text-slate-300 hover:text-white w-6 h-6 md:w-7 md:h-7 flex items-center justify-center text-base font-bold rounded-lg hover:bg-white/10 active:scale-90 transition-all cursor-pointer touch-manipulation"
+                                                        className="text-slate-300 hover:text-white w-10 h-10 flex items-center justify-center text-base font-bold rounded-lg hover:bg-white/10 active:scale-90 transition-all cursor-pointer touch-manipulation"
                                                     >
                                                         +
                                                     </button>
@@ -868,10 +924,10 @@ function CameraContent() {
                                             type="button"
                                             onClick={startWorkoutCountdown}
                                             disabled={!isModelReady}
-                                            className={`w-full py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-black uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-2 touch-manipulation ${
+                                            className={`w-full py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-semibold shadow-xl transition-all flex items-center justify-center gap-2 touch-manipulation ${
                                                 isModelReady
-                                                    ? "bg-primary text-black hover:shadow-[0_0_30px_rgba(57,255,20,0.5)] hover:scale-[1.01] active:scale-[0.98] cursor-pointer"
-                                                    : "bg-white/5 border border-white/10 text-slate-500 cursor-not-allowed"
+                                                    ? "bg-primary text-black hover:scale-[1.01] active:scale-[0.98] cursor-pointer"
+                                                    : "bg-white/5 border border-white/10 text-slate-400 cursor-not-allowed"
                                             }`}
                                         >
                                             <span className="material-symbols-outlined text-xl md:text-2xl font-bold">
@@ -885,10 +941,10 @@ function CameraContent() {
                                         </button>
 
                                         {/* Video Upload Fallback */}
-                                        <label className={`w-full py-1.5 md:py-2 rounded-xl text-[11px] md:text-xs font-semibold tracking-wider transition-all flex items-center justify-center gap-2 border touch-manipulation ${
+                                        <label className={`w-full min-h-11 py-2 rounded-xl text-sm font-semibold tracking-wider transition-all flex items-center justify-center gap-2 border touch-manipulation ${
                                             isModelReady 
                                                 ? "border-white/10 bg-white/5 text-slate-300 hover:text-white hover:bg-white/10 hover:border-white/20 active:scale-98 cursor-pointer" 
-                                                : "border-white/5 text-slate-600 pointer-events-none"
+                                                : "border-white/10 text-slate-400 opacity-60 pointer-events-none"
                                         }`}>
                                             <span className="material-symbols-outlined text-sm md:text-base text-primary">upload_file</span>
                                             <span>{t.camera.warmup.uploadVideo}</span>
@@ -904,7 +960,7 @@ function CameraContent() {
                     {/* ── Workout Complete Overlay ── */}
                     {isTrackingStarted && currentReps >= repGoal && repGoal > 0 && (
                         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                            <div className="bg-[#111] border border-white/10 p-8 rounded-3xl max-w-sm w-full text-center flex items-center flex-col animate-in fade-in zoom-in duration-300 shadow-[0_0_50px_rgba(57,255,20,0.15)]">
+                            <div className="bg-[#111] border border-white/10 p-8 rounded-3xl max-w-sm w-full text-center flex items-center flex-col animate-in fade-in zoom-in duration-300">
                                 <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center mb-5 border border-primary/30">
                                     <span className="material-symbols-outlined text-primary text-5xl">task_alt</span>
                                 </div>
@@ -914,7 +970,7 @@ function CameraContent() {
                                 </p>
                                 
                                 <Link href="/summary" onClick={endWorkoutData}
-                                    className="w-full py-4 bg-primary text-black font-black uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(57,255,20,0.4)]">
+                                    className="w-full py-4 bg-primary text-black font-semibold rounded-2xl flex items-center justify-center gap-2 hover:scale-105 active:scale-95 transition-all">
                                     <span className="material-symbols-outlined text-xl">analytics</span>
                                     {t.camera.workoutComplete.viewSummary}
                                 </Link>

@@ -318,3 +318,19 @@
 .pb-safe {
     padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
 }
+/* Filled variant for the active nav icon */
+.material-symbols-outlined.filled {
+    font-variation-settings: 'FILL' 1;
+}
+
+/* Respect users who turn off motion in their OS settings */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

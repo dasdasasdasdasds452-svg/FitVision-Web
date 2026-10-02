@@ -1,4 +1,41 @@
 export const en = {
+    system: {
+        errorTitle: "Something went wrong",
+        errorDesc: "This page hit an error. Your saved workouts are not affected.",
+        tryAgain: "Try again",
+        goHome: "Go to Home",
+        notFoundTitle: "Page not found",
+        notFoundDesc: "The link may be old or mistyped.",
+        loading: "Loading…"
+    },
+    home: {
+        question: "What are we training today?",
+        startTitle: "Start a set",
+        step1: "Choose exercise",
+        step2: "Reps per set",
+        step3: "Before you start",
+        check1: "Camera at your side, 2–3 m away",
+        check2: "Whole body in frame, head to feet",
+        check3: "Good light, not backlit",
+        openCamera: "Open camera",
+        repsUnit: "reps",
+        decreaseReps: "Fewer reps",
+        increaseReps: "More reps",
+        howToSetup: "How to set up the camera",
+        fixFirst: "Fix this first",
+        fixFoundIn: "Found in {n} of your last {total} sessions",
+        askCoach: "Ask the AI coach about this",
+        noFixYet: "Do one set and the AI will tell you what to fix first.",
+        allGood: "No repeated mistakes in your recent sessions. Nice work!",
+        last7Days: "Last 7 days",
+        avgForm: "Avg form score",
+        sessions: "Sessions",
+        totalReps: "Total reps",
+        recent: "Recent sessions",
+        viewHistory: "View all history",
+        noScore: "No score",
+        coachPrompt: "My {exercise} keeps showing \"{error}\". How do I fix it?"
+    },
     dashboard: {
         greeting: "Hello,",
         athlete: "Athlete",
@@ -24,7 +61,7 @@ export const en = {
             aiTip: "AI Tip",
             aiTipDesc: "Your squat depth has improved, but watch your knee alignment on the ascent.",
             seeDetails: "See details",
-            recentScans: "Recent Scans",
+            recentScans: "Recent Sessions",
             viewAll: "View all",
             noSessions: "No sessions yet. Click 'Launch Camera' to start.",
             flawlessSet: "Flawless Set",
@@ -80,6 +117,13 @@ export const en = {
         avg: "avg"
     },
     summary: {
+        noSessionTitle: "No workout yet",
+        noSessionDesc: "Finish a set and your results will show up here.",
+        startWorkout: "Start a set",
+        clipUnavailable: "Clips are only kept in the tab you trained in.",
+        scoreUnavailable: "No score — the AI server didn't respond",
+        topFix: "Fix #1",
+        foundTimes: "found {n} times",
         title: "Analysis Complete!",
         subtitle: "Great job! Our AI has finished processing your movement patterns.",
         formAccuracy: "Form Accuracy",
@@ -114,6 +158,12 @@ export const en = {
         }
     },
     settings: {
+        account: {
+            title: "Account",
+            signedInAs: "Signed in as",
+            guest: "Guest (demo mode)"
+        },
+        imageTooLarge: "Couldn't save that image. Try a smaller photo.",
         title: "Settings",
         subtitle: "Synchronize your biometric data and calibrate the",
         subtitleHighlight: "FitVision AI",
@@ -147,6 +197,19 @@ export const en = {
         }
     },
     tutorial: {
+        page: {
+            title: "Set up your camera",
+            subtitle: "Three things decide how accurate the AI is. It takes about a minute.",
+            step: "Step",
+            topView: "Seen from above",
+            doTitle: "Do: side view, whole body",
+            dontTitle: "Avoid: front view, too close",
+            exercisesTitle: "What the AI checks",
+            methodNote: "Models: XGBoost + Random Forest, tested on videos they were not trained on.",
+            accuracy: "Accuracy on unseen data",
+            start: "Open camera",
+            back: "Back"
+        },
         hero: {
             tag: "System Calibration Required",
             title: "How to set up your camera for",
@@ -231,10 +294,13 @@ export const en = {
         },
         cta: {
             button: "I UNDERSTAND, LAUNCH CAMERA",
-            privacy: "Your video stream is processed locally and never stored."
+            privacy: "Video never leaves your device — only joint angles are sent for analysis."
         }
     },
     camera: {
+        confirmEnd: "Tap again to end",
+        serverBusy: "AI server is busy — retrying…",
+        repSpoken: "{n}",
         back: "Back",
         aiActive: "AI ACTIVE",
         live: "LIVE",
@@ -328,16 +394,26 @@ export const en = {
         ]
     },
     login: {
+        heroTitle: "Lift with better form.",
+        heroPoints: ["Counts your reps automatically", "Warns you the moment your form slips", "Tells you the one thing to fix after each set"],
+        privacyNote: "Video never leaves your device — only joint angles are sent for analysis.",
+        createTitle: "Create an account",
+        createSubtitle: "Your workouts are saved to your account.",
+        localModeNote: "Local mode: your profile and history are stored on this device only.",
+        tryDemo: "Try without an account",
+        demoHint: "Data stays in this browser.",
+        showPassword: "Show password",
+        hidePassword: "Hide password",
         heroTitle1: "EVOLVE YOUR",
         heroTitle2: "PERFORMANCE.",
         heroSubtitle: "Access elite biometric tracking and AI-driven workout optimization. Your journey to peak physical condition starts here.",
         feature1: "Real-time Form Correction",
         feature2: "Predictive Analytics",
-        welcomeBack: "Welcome Back",
+        welcomeBack: "Welcome back",
         signInSubtitle: "Please enter your details to sign in.",
         orContinueWith: "Or continue with",
         emailLabel: "Email Address",
-        emailPlaceholder: "name@vision.ai",
+        emailPlaceholder: "you@example.com",
         passwordLabel: "Password",
         forgotPassword: "Forgot?",
         signIn: "Sign In",
@@ -348,8 +424,8 @@ export const en = {
         support: "Support",
         alreadyHaveAccount: "Already have an account?",
         signInToggle: "Sign In",
-        processing: "PROCESSING...",
-        signUp: "SIGN UP",
+        processing: "Signing in…",
+        signUp: "Create account",
         signUpSuccess: "Sign up successful! You can now log in.",
         oauthComingSoon: "Coming soon!",
         demoMode: "Enter Immediately (Demo / Guest Mode)"

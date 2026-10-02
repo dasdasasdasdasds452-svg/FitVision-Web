@@ -1,242 +1,277 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import DashboardLayout from "@/components/DashboardLayout";
+import { getUserItem, setUserItem } from "@/lib/userStorage";
+import { useProfile } from "@/components/UserAvatar";
 import { useLanguage } from "@/context/LanguageContext";
+import {
+    EXERCISE_IDS,
+    ExerciseId,
+    WorkoutSession,
+    averageScore,
+    cameraHref,
+    loadHistory,
+    mostFrequentError,
+    sessionsSince,
+    setCurrentSession,
+    totalReps,
+} from "@/lib/workoutStore";
 
-interface WorkoutSession {
-  id?: string;
-  exercise: string;
-  avgScore: number;
-  completedReps?: number;
-  repGoal?: number;
-  errorCount?: number;
-  errors?: any[];
-  timestamp: string | number;
-}
+const REP_PRESETS = [5, 8, 10, 12];
 
 export default function Home() {
-  const { t } = useLanguage();
-  const router = useRouter();
-  const [exercise, setExercise] = useState<"Bench Press" | "Squat" | "Deadlift">("Bench Press");
-  const [repGoal, setRepGoal] = useState<number>(12); // Default to 12 reps
-  const [history, setHistory] = useState<WorkoutSession[]>([]);
+    const { t, language } = useLanguage();
+    const router = useRouter();
+    const profile = useProfile();
+    const [exercise, setExercise] = useState<ExerciseId>("squat");
+    const [repGoal, setRepGoal] = useState<number>(12);
+    const [history, setHistory] = useState<WorkoutSession[]>([]);
 
-  useEffect(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem('fitvision_history') || '[]');
-      if (Array.isArray(stored)) {
-        setHistory(stored);
-      }
-    } catch (e) {
-      console.warn("Failed to parse fitvision_history from localStorage", e);
-    }
-  }, []);
+    useEffect(() => {
+        setHistory(loadHistory());
+        // Remember the last exercise / rep goal so a repeat set is one tap.
+        try {
+            const saved = JSON.parse(getUserItem("fitvision_last_setup") || "null");
+            if (saved && EXERCISE_IDS.includes(saved.exercise)) setExercise(saved.exercise);
+            if (saved && Number.isFinite(saved.reps)) setRepGoal(Math.min(50, Math.max(1, saved.reps)));
+        } catch {
+            /* ignore */
+        }
+    }, []);
 
-  return (
-    <>
-      <DashboardLayout>
-        <div className="px-5 md:px-10 max-w-7xl mx-auto">
-          {/* Premium Page Header */}
-          <div className="mb-10 mt-2 flex flex-col gap-2 animate-fade-up text-white">
-            <h1 className="text-3xl md:text-5xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400 flex items-center gap-3">
-              {t.dashboard.greeting}
-              <span className="text-primary drop-shadow-[0_0_12px_rgba(57,255,20,0.4)] whitespace-nowrap">
-                {t.dashboard.athlete}
-              </span>
-              <span className="material-symbols-outlined text-primary text-3xl md:text-5xl animate-[wave_2s_ease-in-out_infinite] origin-bottom-right">waving_hand</span>
-            </h1>
-            <p className="text-slate-400 font-medium flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary/80 text-sm">electric_bolt</span>
-              {t.dashboard.subtitle}
-            </p>
-          </div>
+    useEffect(() => {
+        setUserItem("fitvision_last_setup", JSON.stringify({ exercise, reps: repGoal }));
+    }, [exercise, repGoal]);
 
-          {/* Exercise Selection Overlay Config */}
-          <div className="mb-8 flex gap-2 p-1.5 rounded-2xl bg-surface-dark/60 backdrop-blur-md w-fit border border-white/10 overflow-x-auto max-w-full shadow-lg animate-fade-up">
-            <button
-              onClick={() => setExercise("Bench Press")}
-              className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${exercise === "Bench Press" ? "bg-primary text-black shadow-[0_0_15px_rgba(57,255,20,0.4)] scale-105" : "text-slate-300 hover:text-white hover:bg-white/10"
-                }`}
-            >
-              {t.dashboard.exerciseSelection.benchPress}
-            </button>
-            <button
-              onClick={() => setExercise("Squat")}
-              className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${exercise === "Squat" ? "bg-primary text-black shadow-[0_0_15px_rgba(57,255,20,0.4)] scale-105" : "text-slate-300 hover:text-white hover:bg-white/10"
-                }`}
-            >
-              {t.dashboard.exerciseSelection.squat}
-            </button>
-            <button
-              onClick={() => setExercise("Deadlift")}
-              className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${exercise === "Deadlift" ? "bg-primary text-black shadow-[0_0_15px_rgba(57,255,20,0.4)] scale-105" : "text-slate-300 hover:text-white hover:bg-white/10"
-                }`}
-            >
-              {t.dashboard.exerciseSelection.deadlift}
-            </button>
-          </div>
+    const exerciseLabel = (id: ExerciseId) => t.camera.exerciseName[id];
+    const week = useMemo(() => sessionsSince(history, 7), [history]);
+    const weekAvg = averageScore(week);
+    const topError = useMemo(() => mostFrequentError(history, 5), [history]);
+    const locale = language === "th" ? "th-TH" : "en-US";
 
-          {/* Main Action Card */}
-          <div className="relative w-full rounded-2xl overflow-hidden bg-surface-dark border border-primary/30 shadow-neon group transition-all mb-8 animate-fade-up">
-            {/* Background Image with Overlay */}
-            <div
-              className="absolute inset-0 bg-cover bg-center opacity-40 group-hover:opacity-50 transition-opacity duration-500"
-              style={{
-                backgroundImage:
-                  "url('https://lh3.googleusercontent.com/aida-public/AB6AXuCWzqhMgfWHzfU1BEUX-bmaWXHFBmGVPWj0en9b9hNvpcamGQLiTugenZZiYYnCenK0H0X-AN6c9hNh5bILpRn1SlBsh0jQhnPpfexFP2Vk0VlAqPsoJLo4_jG0aSy5XYhGKhKjaK0T8MmPH1q-kNDBHiblnv_mER0QuOn7CR3F83yiZzAyVodoKdZQZi0ho5E8bYObGEODIHHYccobvxYoRvefWeOQeDA2ZJj0ZmB5yQgPn-1wt-cORYKwycDN95RxWM_ADzx7XFpT')",
-              }}
-            ></div>
-            <div className="absolute inset-0 bg-gradient-to-r from-background-dark via-background-dark/80 to-transparent"></div>
+    const openSession = (s: WorkoutSession) => {
+        setCurrentSession(s, false);
+        router.push("/summary");
+    };
 
-            <div className="relative z-10 p-6 md:p-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-              <div className="max-w-xl">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/20 text-primary text-xs font-bold uppercase tracking-wider mb-4 border border-primary/30">
-                  <span className="material-symbols-outlined text-[16px]">bolt</span>
-                  {t.dashboard.actionCard.badge} ({exercise} {t.dashboard.actionCard.selected})
-                </div>
-                <h2 className="text-2xl md:text-4xl font-bold text-white mb-2 leading-tight">
-                  {t.dashboard.actionCard.title}
-                </h2>
-                <div className="flex flex-col gap-4 mb-6">
-                  <p className="text-slate-300 md:text-lg">
-                    {t.dashboard.actionCard.description}
-                  </p>
-                  <div className="flex items-center gap-3 bg-black/40 p-3 rounded-xl w-max border border-white/10">
-                    <span className="material-symbols-outlined text-primary">fitness_center</span>
-                    <span className="text-white/80 text-sm font-medium">{t.dashboard.actionCard.repGoalLabel}</span>
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      value={repGoal}
-                      onChange={(e) => setRepGoal(Number(e.target.value) || 1)}
-                      className="bg-white/10 border-none rounded-lg text-white font-bold w-16 px-2 py-1 text-center focus:ring-1 focus:ring-primary outline-none"
-                    />
-                  </div>
-                </div>
+    const coachHref = topError
+        ? `/chat?q=${encodeURIComponent(
+            t.home.coachPrompt.replace("{exercise}", exerciseLabel(topError.exerciseId)).replace("{error}", topError.title)
+        )}`
+        : "/chat";
 
-                <div className="flex flex-wrap gap-3">
-                  <Link
-                    href={`/camera?model=${exercise.toLowerCase().replace(" ", "")}&reps=${repGoal}`}
-                    className="bg-primary hover:bg-primary/90 text-background-dark font-bold py-3 px-6 rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined">videocam</span>
-                    {t.dashboard.actionCard.launchCamera}
-                  </Link>
-                  <Link href="/tutorial" className="bg-white/10 hover:bg-white/20 text-white font-medium py-3 px-6 rounded-xl backdrop-blur-sm transition-colors border border-white/10 flex items-center justify-center">
-                    {t.dashboard.actionCard.viewTutorial}
-                  </Link>
-                </div>
-              </div>
+    const greetingName = profile.name ? ` ${profile.name}` : "";
 
-              {/* Visual Graphic for Desktop */}
-              <div className="hidden md:flex relative size-32 items-center justify-center shrink-0">
-                <div className="absolute inset-0 border-4 border-dashed border-primary/30 rounded-full animate-[spin_10s_linear_infinite]"></div>
-                <div className="absolute inset-0 border-4 border-t-primary border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin"></div>
-                <span className="material-symbols-outlined text-6xl text-primary drop-shadow-[0_0_10px_rgba(57,255,20,0.8)]">
-                  analytics
-                </span>
-              </div>
-            </div>
-          </div>
+    return (
+        <DashboardLayout>
+            <div className="px-4 md:px-10 max-w-6xl mx-auto pt-4 md:pt-2 pb-10 flex flex-col gap-6 md:gap-8">
+                <header className="flex flex-col md:flex-row md:items-end justify-between gap-2">
+                    <div>
+                        <p className="text-sm text-slate-400">
+                            {new Date().toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long" })}
+                        </p>
+                        <h1 className="text-2xl md:text-4xl font-semibold text-white leading-tight mt-1">
+                            {t.dashboard.greeting}{greetingName} <span className="text-slate-300">{t.home.question}</span>
+                        </h1>
+                    </div>
+                    <Link href="/tutorial" className="text-primary text-sm font-medium inline-flex items-center gap-1.5 min-h-11 hover:underline">
+                        <span className="material-symbols-outlined text-lg">play_circle</span>
+                        {t.home.howToSetup}
+                    </Link>
+                </header>
 
-          {/* Stats & Recent Scans Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left Column: Weekly Stats */}
-            <div className="lg:col-span-1 flex flex-col gap-6 animate-fade-up">
-              <div className="bg-surface-dark border border-white/5 rounded-2xl p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-bold text-white">{t.dashboard.stats.formAccuracy}</h3>
-                  <span className="text-primary text-sm font-mono bg-primary/10 px-2 py-1 rounded">+2.4%</span>
-                </div>
-                <div className="flex items-end gap-2 mb-2">
-                  <span className="text-4xl font-bold text-white">
-                    {history.length > 0 ? Math.round(history.reduce((sum, s) => sum + (s.avgScore || 0), 0) / history.length) : 0}%
-                  </span>
-                  <span className="text-slate-400 mb-1">{t.dashboard.stats.avgScore}</span>
-                </div>
-                <div className="w-full bg-white/10 h-2 rounded-full overflow-hidden">
-                  <div
-                    className="bg-primary h-full rounded-full shadow-[0_0_10px_rgba(57,255,20,0.5)] transition-all duration-1000"
-                    style={{ width: `${history.length > 0 ? Math.min(100, Math.round(history.reduce((sum, s) => sum + (s.avgScore || 0), 0) / history.length)) : 0}%` }}
-                  ></div>
-                </div>
-                <p className="text-xs text-slate-500 mt-3">{t.dashboard.stats.basedOn.replace('{count}', history.length.toString())}</p>
-              </div>
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] gap-6 items-start">
+                    {/* ── Start panel: everything needed to begin a set, in one place ── */}
+                    <section aria-labelledby="start-h" className="bg-surface-dark border border-white/10 rounded-3xl p-5 md:p-7 flex flex-col gap-6">
+                        <h2 id="start-h" className="text-xl font-semibold text-white">{t.home.startTitle}</h2>
 
-              <div className="bg-gradient-to-br from-surface-dark to-surface-darker border border-white/5 rounded-2xl p-6 relative overflow-hidden">
-                <div className="relative z-10">
-                  <h3 className="text-lg font-bold text-white mb-2">{t.dashboard.stats.aiTip}</h3>
-                  <p className="text-slate-300 text-sm mb-4">
-                    {t.dashboard.stats.aiTipDesc}
-                  </p>
-                  <Link href="/history" className="text-primary text-sm font-bold flex items-center gap-1 hover:gap-2 transition-all">
-                    {t.dashboard.stats.seeDetails} <span className="material-symbols-outlined text-sm">arrow_forward</span>
-                  </Link>
-                </div>
-                <span className="material-symbols-outlined absolute -bottom-4 -right-4 text-9xl text-white/5 rotate-[-15deg]">
-                  lightbulb
-                </span>
-              </div>
-            </div>
+                        <fieldset className="flex flex-col gap-3">
+                            <legend className="text-sm text-slate-300 font-medium mb-3">
+                                <span className="text-white font-bold mr-1.5">1</span>{t.home.step1}
+                            </legend>
+                            <div role="radiogroup" className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                {EXERCISE_IDS.map((id) => {
+                                    const selected = exercise === id;
+                                    return (
+                                        <button
+                                            key={id}
+                                            type="button"
+                                            role="radio"
+                                            aria-checked={selected}
+                                            onClick={() => setExercise(id)}
+                                            className={`flex items-center gap-3 min-h-14 px-4 py-3 rounded-2xl border-2 text-left transition-colors cursor-pointer ${selected
+                                                ? "border-primary bg-primary/10"
+                                                : "border-white/10 bg-white/[0.03] hover:border-white/25"
+                                                }`}
+                                        >
+                                            <span aria-hidden="true" className={`size-5 rounded-full shrink-0 ${selected ? "border-[6px] border-primary bg-background-dark" : "border-2 border-slate-500"}`} />
+                                            <span className="text-lg font-semibold text-white">{exerciseLabel(id)}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </fieldset>
 
-            {/* Right Column: Recent Scans List */}
-            <div className="lg:col-span-2 animate-fade-up">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold text-white">{t.dashboard.stats.recentScans}</h3>
-                <Link href="/history" className="text-sm text-slate-400 hover:text-white transition-colors">
-                  {t.dashboard.stats.viewAll}
-                </Link>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                {history.length === 0 ? (
-                  <div className="text-slate-400 p-4 border border-white/5 rounded-xl text-center">{t.dashboard.stats.noSessions}</div>
-                ) : history.slice(0, 3).map((session, i) => (
-                  <button 
-                    onClick={() => { 
-                      sessionStorage.setItem('fitvision_session_stats', JSON.stringify(session)); 
-                      sessionStorage.setItem('fitvision_errors', JSON.stringify(session.errors || []));
-                      router.push('/summary'); 
-                    }} 
-                    key={session.id || i} 
-                    className="group flex items-center justify-between p-4 bg-surface-dark hover:bg-white/5 border border-white/5 hover:border-primary/30 rounded-xl transition-all cursor-pointer w-full text-left"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="size-12 rounded-lg bg-surface-darker flex items-center justify-center border border-white/10 group-hover:border-primary/50 text-white group-hover:text-primary transition-colors">
-                        <span className="material-symbols-outlined">
-                          {session.exercise === 'squat' ? 'accessibility_new' : session.exercise === 'deadlift' ? 'fitness_center' : 'sports_gymnastics'}
-                        </span>
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-white group-hover:text-primary transition-colors capitalize">{session.exercise}</h4>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-slate-400">
-                            {new Date(session.timestamp).toLocaleDateString()}
-                          </span>
-                          <span className="size-1 rounded-full bg-slate-600"></span>
-                          {session.errorCount === 0 ? (
-                            <span className="text-xs text-primary">{t.dashboard.stats.flawlessSet}</span>
-                          ) : (
-                            <span className="text-xs text-orange-400">{session.errorCount} {t.dashboard.stats.mistakesDetected}</span>
-                          )}
+                        <div className="flex flex-col gap-3">
+                            <p id="reps-label" className="text-sm text-slate-300 font-medium">
+                                <span className="text-white font-bold mr-1.5">2</span>{t.home.step2}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-4">
+                                <div className="flex items-center gap-1" role="group" aria-labelledby="reps-label">
+                                    <button
+                                        type="button"
+                                        aria-label={t.home.decreaseReps}
+                                        onClick={() => setRepGoal((r) => Math.max(1, r - 1))}
+                                        className="size-12 rounded-xl border border-white/15 bg-white/[0.04] text-2xl text-white hover:bg-white/10 cursor-pointer"
+                                    >
+                                        −
+                                    </button>
+                                    <span aria-live="polite" className="w-16 text-center text-3xl font-bold text-white tabular-nums">{repGoal}</span>
+                                    <button
+                                        type="button"
+                                        aria-label={t.home.increaseReps}
+                                        onClick={() => setRepGoal((r) => Math.min(50, r + 1))}
+                                        className="size-12 rounded-xl border border-white/15 bg-white/[0.04] text-2xl text-white hover:bg-white/10 cursor-pointer"
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                                <div className="flex gap-2">
+                                    {REP_PRESETS.map((n) => (
+                                        <button
+                                            key={n}
+                                            type="button"
+                                            aria-pressed={repGoal === n}
+                                            onClick={() => setRepGoal(n)}
+                                            className={`h-10 min-w-12 px-3 rounded-full border text-sm font-semibold tabular-nums cursor-pointer transition-colors ${repGoal === n
+                                                ? "bg-white text-background-dark border-white"
+                                                : "border-white/15 text-slate-200 hover:border-white/40"
+                                                }`}
+                                        >
+                                            {n}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
-                      </div>
+
+                        <div className="flex flex-col gap-3">
+                            <p className="text-sm text-slate-300 font-medium">
+                                <span className="text-white font-bold mr-1.5">3</span>{t.home.step3}
+                            </p>
+                            <ul className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-slate-200">
+                                {[t.home.check1, t.home.check2, t.home.check3].map((c) => (
+                                    <li key={c} className="flex items-start gap-2 p-3 rounded-xl bg-white/[0.04]">
+                                        <span className="material-symbols-outlined text-primary text-lg leading-none">check</span>
+                                        {c}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        <Link
+                            href={cameraHref(exercise, repGoal)}
+                            className="h-14 rounded-2xl bg-primary text-background-dark text-lg font-semibold flex items-center justify-center gap-2 hover:brightness-110 transition"
+                        >
+                            <span className="material-symbols-outlined">videocam</span>
+                            {t.home.openCamera} · {exerciseLabel(exercise)} {repGoal} {t.home.repsUnit}
+                        </Link>
+                    </section>
+
+                    <div className="flex flex-col gap-6">
+                        {/* ── What to fix first: computed from real history ── */}
+                        {topError ? (
+                            <section aria-labelledby="fix-h" className="rounded-3xl p-5 bg-orange-500/10 border border-orange-400/30 flex flex-col gap-2">
+                                <h2 id="fix-h" className="text-sm font-semibold text-orange-300 flex items-center gap-1.5">
+                                    <span className="material-symbols-outlined text-lg">warning</span>
+                                    {t.home.fixFirst}
+                                </h2>
+                                <p className="text-lg font-semibold text-white leading-snug">
+                                    {topError.title} <span className="text-slate-300 font-normal">({exerciseLabel(topError.exerciseId)})</span>
+                                </p>
+                                <p className="text-sm text-slate-300">
+                                    {t.home.fixFoundIn.replace("{n}", String(topError.sessionCount)).replace("{total}", String(topError.inspected))}
+                                </p>
+                                <Link href={coachHref} className="text-sm font-semibold text-orange-300 hover:underline min-h-11 inline-flex items-center">
+                                    {t.home.askCoach} →
+                                </Link>
+                            </section>
+                        ) : (
+                            <section className="rounded-3xl p-5 bg-surface-dark border border-white/10">
+                                <h2 className="text-sm font-semibold text-slate-300 mb-1">{t.home.fixFirst}</h2>
+                                <p className="text-sm text-slate-300">{history.length > 0 ? t.home.allGood : t.home.noFixYet}</p>
+                            </section>
+                        )}
+
+                        {/* ── Last 7 days ── */}
+                        <section aria-labelledby="week-h" className="rounded-3xl p-5 bg-surface-dark border border-white/10">
+                            <div className="flex items-baseline justify-between mb-4">
+                                <h2 id="week-h" className="text-base font-semibold text-white">{t.home.last7Days}</h2>
+                                <Link href="/history" className="text-sm text-primary hover:underline">{t.dashboard.stats.viewAll}</Link>
+                            </div>
+                            <dl className="grid grid-cols-3 gap-3">
+                                <div>
+                                    <dt className="text-xs text-slate-400">{t.home.avgForm}</dt>
+                                    <dd className="text-2xl font-bold text-white tabular-nums">{weekAvg === null ? "—" : `${weekAvg}%`}</dd>
+                                </div>
+                                <div>
+                                    <dt className="text-xs text-slate-400">{t.home.sessions}</dt>
+                                    <dd className="text-2xl font-bold text-white tabular-nums">{week.length}</dd>
+                                </div>
+                                <div>
+                                    <dt className="text-xs text-slate-400">{t.home.totalReps}</dt>
+                                    <dd className="text-2xl font-bold text-white tabular-nums">{totalReps(week)}</dd>
+                                </div>
+                            </dl>
+                        </section>
                     </div>
-                    <div className="flex flex-col items-end">
-                      <span className={`font-mono text-lg font-bold ${session.avgScore > 90 ? 'text-primary' : 'text-white'}`}>{session.avgScore}%</span>
-                      <span className="text-xs text-slate-500">{t.dashboard.stats.accuracy}</span>
+                </div>
+
+                {/* ── Recent sessions ── */}
+                <section aria-labelledby="recent-h" className="flex flex-col gap-3">
+                    <div className="flex items-baseline justify-between">
+                        <h2 id="recent-h" className="text-lg font-semibold text-white">{t.home.recent}</h2>
+                        {history.length > 0 && (
+                            <Link href="/history" className="text-sm text-primary hover:underline">{t.home.viewHistory}</Link>
+                        )}
                     </div>
-                  </button>
-                ))}
-              </div>
+                    {history.length === 0 ? (
+                        <p className="text-slate-300 p-5 rounded-2xl border border-white/10 text-center">{t.dashboard.stats.noSessions}</p>
+                    ) : (
+                        <ul className="rounded-2xl border border-white/10 bg-surface-dark overflow-hidden divide-y divide-white/5">
+                            {history.slice(0, 3).map((s) => (
+                                <li key={s.id}>
+                                    <button
+                                        type="button"
+                                        onClick={() => openSession(s)}
+                                        className="w-full grid grid-cols-[minmax(0,1fr)_auto_20px] items-center gap-4 px-4 md:px-5 py-4 text-left hover:bg-white/[0.04] transition-colors cursor-pointer"
+                                    >
+                                        <span className="min-w-0">
+                                            <span className="block font-semibold text-white">{exerciseLabel(s.exerciseId)}</span>
+                                            <span className="block text-sm text-slate-400 truncate">
+                                                {new Date(s.timestamp).toLocaleDateString(locale, { day: "numeric", month: "short" })} ·{" "}
+                                                {s.completedReps}/{s.repGoal} {t.home.repsUnit} ·{" "}
+                                                {s.errorCount === 0 ? (
+                                                    <span className="text-primary">{t.dashboard.stats.flawlessSet}</span>
+                                                ) : (
+                                                    <span className="text-orange-300">{s.errorCount} {t.dashboard.stats.mistakesDetected}</span>
+                                                )}
+                                            </span>
+                                        </span>
+                                        <span className="text-xl font-bold text-white tabular-nums">
+                                            {s.avgScore === null ? <span className="text-sm font-normal text-slate-400">{t.home.noScore}</span> : `${s.avgScore}%`}
+                                        </span>
+                                        <span className="material-symbols-outlined text-slate-500">chevron_right</span>
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </section>
             </div>
-          </div>
-        </div>
-      </DashboardLayout>
-    </>
-  );
+        </DashboardLayout>
+    );
 }

@@ -17,8 +17,8 @@ const kanit = Kanit({
 });
 
 export const metadata: Metadata = {
-  title: "FitVision Dashboard",
-  description: "AI Powered Form Analysis",
+  title: "FitVision — AI วิเคราะห์ท่าออกกำลังกาย",
+  description: "วิเคราะห์ฟอร์ม Squat, Bench Press และ Deadlift แบบเรียลไทม์ด้วยกล้องมือถือ",
 };
 
 export default function RootLayout({
@@ -27,10 +27,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="th" className="dark">
       <head>
         <link
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=block"
           rel="stylesheet"
         />
       </head>

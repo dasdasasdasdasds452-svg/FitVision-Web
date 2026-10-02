@@ -1,29 +1,19 @@
+"use client";
+
 import Link from "next/link";
+import { useLanguage } from "@/context/LanguageContext";
 
 export default function NotFound() {
+  const { t } = useLanguage();
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-background-dark text-slate-100 font-sans p-4">
-      <h1 className="text-9xl font-display font-bold text-transparent bg-clip-text bg-gradient-to-b from-primary to-green-800 drop-shadow-[0_0_15px_rgba(57,255,20,0.5)] mb-4">
-        404
-      </h1>
-      <div className="flex items-center gap-3 mb-8">
-        <span className="material-symbols-outlined text-primary text-2xl">
-          search_off
-        </span>
-        <h2 className="text-2xl font-bold text-white">Page not found</h2>
-      </div>
-      <p className="text-slate-400 mb-8 max-w-md text-center">
-        The page you are looking for has been spotted doing cardio outside the Matrix. 
-        Let's get you back to lifting.
-      </p>
-      
-      <Link 
-        href="/"
-        className="px-8 py-3 bg-primary text-black font-bold rounded-xl hover:bg-white hover:scale-105 transition-all shadow-neon flex items-center gap-2"
-      >
-        <span className="material-symbols-outlined text-sm">dashboard</span>
-        Back to Dashboard
+    <main className="min-h-[70vh] md:ml-64 flex flex-col items-center justify-center text-center px-5 py-16 gap-4">
+      <p className="text-6xl font-bold text-white/20 tabular-nums">404</p>
+      <h1 className="text-2xl font-semibold text-white">{t.system.notFoundTitle}</h1>
+      <p className="text-slate-300 max-w-sm">{t.system.notFoundDesc}</p>
+      <Link href="/" className="mt-2 h-12 px-6 rounded-xl bg-primary text-background-dark font-semibold flex items-center gap-2 hover:brightness-110">
+        <span className="material-symbols-outlined text-xl">home</span>
+        {t.system.goHome}
       </Link>
-    </div>
+    </main>
   );
 }
