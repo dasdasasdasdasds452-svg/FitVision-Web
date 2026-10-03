@@ -81,7 +81,7 @@ export async function rateLimit(
     if (distributedLimiter) {
         try {
             // Note: Currently ignores dynamic limit/window and uses the 20/1m configured above
-            const { success, limit: total, remaining, reset } = await distributedLimiter.limit(key);
+            const { success, remaining, reset } = await distributedLimiter.limit(key);
             return {
                 success,
                 remaining,

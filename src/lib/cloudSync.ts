@@ -4,7 +4,7 @@
 
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { getStorageAccount } from "@/lib/userStorage";
-import { WorkoutSession, loadHistory, normalizeSession, replaceHistory } from "@/lib/workoutStore";
+import { WorkoutSession, loadHistory, normalizeSession, replaceHistory, withoutClipUrl } from "@/lib/workoutStore";
 
 const TABLE = "fitvision_sessions";
 
@@ -32,7 +32,7 @@ async function currentUserId(): Promise<string | null> {
 }
 
 /** Strip clip URLs (they only live in the recording tab) before uploading. */
-const forCloud = (s: WorkoutSession) => ({ ...s, errors: s.errors.map(({ url: _url, ...rest }) => rest) });
+const forCloud = (s: WorkoutSession) => ({ ...s, errors: s.errors.map(withoutClipUrl) });
 
 export async function pushSession(session: WorkoutSession): Promise<boolean> {
     const userId = await currentUserId();

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useSyncExternalStore, ReactNode } from 'react';
 import { en } from '@/locales/en';
 import { th } from '@/locales/th';
 
@@ -15,21 +15,32 @@ interface LanguageContextType {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
-export function LanguageProvider({ children }: { children: ReactNode }) {
-    // Thai is the primary audience, so it is the default.
-    const [language, setLanguageState] = useState<Language>('th');
+const LANG_KEY = 'fitvision_lang';
+const LANG_EVENT = 'fitvision-language';
+// Thai is the primary audience, so it is the default (also on the server).
+const DEFAULT_LANGUAGE: Language = 'th';
 
-    useEffect(() => {
-        // Run once on mount: sync with localStorage if exists
-        try {
-            const savedLang = localStorage.getItem('fitvision_lang');
-            if (savedLang === 'en' || savedLang === 'th') {
-                setLanguageState(savedLang);
-            }
-        } catch {
-            // storage unavailable — keep default
-        }
-    }, []);
+function readLanguage(): Language {
+    try {
+        const saved = localStorage.getItem(LANG_KEY);
+        return saved === 'en' || saved === 'th' ? saved : DEFAULT_LANGUAGE;
+    } catch {
+        return DEFAULT_LANGUAGE; // storage unavailable
+    }
+}
+
+function subscribeLanguage(onChange: () => void) {
+    // Same tab (setLanguage) and other tabs (storage event) both update the UI.
+    window.addEventListener(LANG_EVENT, onChange);
+    window.addEventListener('storage', onChange);
+    return () => {
+        window.removeEventListener(LANG_EVENT, onChange);
+        window.removeEventListener('storage', onChange);
+    };
+}
+
+export function LanguageProvider({ children }: { children: ReactNode }) {
+    const language = useSyncExternalStore(subscribeLanguage, readLanguage, () => DEFAULT_LANGUAGE);
 
     useEffect(() => {
         // Screen readers and the browser's font fallback rely on the page language.
@@ -37,12 +48,12 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     }, [language]);
 
     const setLanguage = (lang: Language) => {
-        setLanguageState(lang);
         try {
-            localStorage.setItem('fitvision_lang', lang);
+            localStorage.setItem(LANG_KEY, lang);
         } catch {
-            // ignore
+            // storage blocked: the choice can't be saved, so it can't be shown either
         }
+        window.dispatchEvent(new Event(LANG_EVENT));
     };
 
     const t = language === 'en' ? en : th;

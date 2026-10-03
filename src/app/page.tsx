@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useHydrated } from "@/lib/useHydrated";
 import { useRouter } from "next/navigation";
 import DashboardLayout from "@/components/DashboardLayout";
 import { getUserItem, setUserItem } from "@/lib/userStorage";
@@ -26,50 +27,88 @@ import { Mission, MissionState, loadMissions, missionProgress, refreshMissions, 
 const REP_PRESETS = [5, 8, 10, 12];
 const REST_PRESETS = [60, 90, 120, 180];
 
+interface HomeBoot {
+    history: WorkoutSession[];
+    weeklyGoal: number;
+    missions: MissionState;
+    part: DayPart;
+    onboardDismissed: boolean;
+    exercise: ExerciseId;
+    reps: number;
+    sets: number;
+    rest: number;
+    weight: string;
+}
+
+const EMPTY_HISTORY: WorkoutSession[] = [];
+const EMPTY_MISSIONS: MissionState = { active: null, completed: [], skipped: [] };
+
+/** Everything the home page reads from this device, read once after hydration. */
+function readBoot(): HomeBoot {
+    const history = loadHistory();
+    let onboardDismissed = false;
+    try {
+        onboardDismissed = localStorage.getItem("fitvision_onboarded") === "true";
+    } catch {
+        /* storage blocked */
+    }
+    const boot: HomeBoot = {
+        history,
+        weeklyGoal: loadWeeklyGoal(),
+        missions: refreshMissions(loadMissions(), history).state,
+        part: dayPart(),
+        onboardDismissed,
+        exercise: "squat",
+        reps: 12,
+        sets: 1,
+        rest: 90,
+        weight: "",
+    };
+    // Remember the last exercise / rep goal so a repeat set is one tap.
+    try {
+        const saved = JSON.parse(getUserItem("fitvision_last_setup") || "null");
+        if (saved && EXERCISE_IDS.includes(saved.exercise)) boot.exercise = saved.exercise;
+        if (saved && Number.isFinite(saved.reps)) boot.reps = Math.min(50, Math.max(1, saved.reps));
+        if (saved && Number.isFinite(saved.sets)) boot.sets = Math.min(10, Math.max(1, saved.sets));
+        if (saved && REST_PRESETS.includes(saved.rest)) boot.rest = saved.rest;
+        if (saved && Number.isFinite(saved.kg) && saved.kg > 0) boot.weight = String(saved.kg);
+    } catch {
+        /* ignore */
+    }
+    return boot;
+}
+
 export default function Home() {
+    const hydrated = useHydrated();
+    const boot = useMemo(() => (hydrated ? readBoot() : null), [hydrated]);
+    // Remount once the device data is available so every field starts from it.
+    return <HomeView key={boot ? "device" : "server"} boot={boot} />;
+}
+
+function HomeView({ boot }: { boot: HomeBoot | null }) {
     const { t, language } = useLanguage();
     const router = useRouter();
     const profile = useProfile();
-    const [exercise, setExercise] = useState<ExerciseId>("squat");
-    const [repGoal, setRepGoal] = useState<number>(12);
-    const [history, setHistory] = useState<WorkoutSession[]>([]);
-    const [weeklyGoal, setWeeklyGoal] = useState(3);
-    const [sets, setSets] = useState(1);
-    const [rest, setRest] = useState(90);
-    const [weight, setWeight] = useState("");
-    const [missions, setMissions] = useState<MissionState>({ active: null, completed: [], skipped: [] });
-    const [part, setPart] = useState<DayPart | null>(null);
-    const [onboardDismissed, setOnboardDismissed] = useState(true);
+    const [exercise, setExercise] = useState<ExerciseId>(boot?.exercise ?? "squat");
+    const [repGoal, setRepGoal] = useState<number>(boot?.reps ?? 12);
+    const history = boot?.history ?? EMPTY_HISTORY;
+    const [weeklyGoal, setWeeklyGoal] = useState(boot?.weeklyGoal ?? 3);
+    const [sets, setSets] = useState(boot?.sets ?? 1);
+    const [rest, setRest] = useState(boot?.rest ?? 90);
+    const [weight, setWeight] = useState(boot?.weight ?? "");
+    const [missions, setMissions] = useState<MissionState>(boot?.missions ?? EMPTY_MISSIONS);
+    const part: DayPart | null = boot?.part ?? null;
+    const [onboardDismissed, setOnboardDismissed] = useState(boot?.onboardDismissed ?? true);
+
+    // Persist the refreshed fix-it mission (a new one may have started from the latest history).
+    useEffect(() => {
+        if (boot) saveMissions(boot.missions);
+    }, [boot]);
 
     useEffect(() => {
-        const h = loadHistory();
-        setHistory(h);
-        setWeeklyGoal(loadWeeklyGoal());
-        const { state } = refreshMissions(loadMissions(), h);
-        saveMissions(state);
-        setMissions(state);
-        setPart(dayPart());
-        try {
-            setOnboardDismissed(localStorage.getItem("fitvision_onboarded") === "true");
-        } catch {
-            setOnboardDismissed(false);
-        }
-        // Remember the last exercise / rep goal so a repeat set is one tap.
-        try {
-            const saved = JSON.parse(getUserItem("fitvision_last_setup") || "null");
-            if (saved && EXERCISE_IDS.includes(saved.exercise)) setExercise(saved.exercise);
-            if (saved && Number.isFinite(saved.reps)) setRepGoal(Math.min(50, Math.max(1, saved.reps)));
-            if (saved && Number.isFinite(saved.sets)) setSets(Math.min(10, Math.max(1, saved.sets)));
-            if (saved && REST_PRESETS.includes(saved.rest)) setRest(saved.rest);
-            if (saved && Number.isFinite(saved.kg) && saved.kg > 0) setWeight(String(saved.kg));
-        } catch {
-            /* ignore */
-        }
-    }, []);
-
-    useEffect(() => {
+        if (!boot) return; // never overwrite the saved setup with defaults before it was read
         setUserItem("fitvision_last_setup", JSON.stringify({ exercise, reps: repGoal, sets, rest, kg: parseFloat(weight) || null }));
-    }, [exercise, repGoal, sets, rest, weight]);
+    }, [boot, exercise, repGoal, sets, rest, weight]);
 
     const exerciseLabel = (id: ExerciseId) => t.camera.exerciseName[id];
     const week = useMemo(() => sessionsSince(history, 7), [history]);

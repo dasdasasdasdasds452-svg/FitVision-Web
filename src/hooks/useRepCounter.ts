@@ -22,6 +22,7 @@ interface RepCounterReturn {
  */
 export function useRepCounter(): RepCounterReturn {
     const [currentReps, setCurrentReps] = useState(0);
+    const [repState, setRepState] = useState<"up" | "down">("up");
     const repStateRef = useRef<"up" | "down">("up");
     const localRepCountRef = useRef(0);
 
@@ -29,6 +30,7 @@ export function useRepCounter(): RepCounterReturn {
         repStateRef.current = "up";
         localRepCountRef.current = 0;
         setCurrentReps(0);
+        setRepState("up");
     }, []);
 
     const processFrame = useCallback((config: RepCounterConfig) => {
@@ -60,15 +62,17 @@ export function useRepCounter(): RepCounterReturn {
                 localRepCountRef.current += 1;
                 setCurrentReps(localRepCountRef.current);
             }
+            if (repStateRef.current !== "up") setRepState("up");
             repStateRef.current = "up";
         } else if (mainAngle < downThreshold) {
+            if (repStateRef.current !== "down") setRepState("down");
             repStateRef.current = "down";
         }
     }, []);
 
     return {
         currentReps,
-        repState: repStateRef.current,
+        repState,
         mainAngle: 0,
         resetReps,
         processFrame,

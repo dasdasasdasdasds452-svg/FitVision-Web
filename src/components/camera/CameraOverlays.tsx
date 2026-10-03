@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
+import type { en } from "@/locales/en";
+
+type Dict = typeof en;
 
 interface RiskLevelData {
     level: string;
@@ -13,7 +16,7 @@ interface RiskLevelData {
 }
 
 export interface CameraOverlayProps {
-    t: any;
+    t: Dict;
     isTrackingStarted: boolean;
     isGoodForm: boolean;
     formScore: number;
@@ -35,7 +38,7 @@ export interface CameraOverlayProps {
 }
 
 /** On/off switch for the ghost rep. */
-function GhostToggle({ t, ghost, className }: { t: any; ghost: NonNullable<CameraOverlayProps["ghost"]>; className: string }) {
+function GhostToggle({ t, ghost, className }: { t: Dict; ghost: NonNullable<CameraOverlayProps["ghost"]>; className: string }) {
     return (
         <button
             type="button"
@@ -55,7 +58,7 @@ function GhostToggle({ t, ghost, className }: { t: any; ghost: NonNullable<Camer
  * End button that needs two taps (within 3 s). A single accidental tap while
  * setting up under the bar must not throw away the whole set.
  */
-function EndWorkoutButton({ t, endWorkoutData, className }: { t: any; endWorkoutData: () => void; className: string }) {
+function EndWorkoutButton({ t, endWorkoutData, className }: { t: Dict; endWorkoutData: () => void; className: string }) {
     const [armed, setArmed] = useState(false);
     const router = useRouter();
     useEffect(() => {

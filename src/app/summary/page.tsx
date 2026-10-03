@@ -65,7 +65,7 @@ export default function SummaryPage() {
     const [missionNote, setMissionNote] =useState<{ kind: "pass" | "fail" | "done"; mission: Mission; done: number } | null>(null);
 
     const exerciseLabel = session ? t.camera.exerciseName[session.exerciseId] : "";
-    const errors = session?.errors ?? [];
+    const errors = useMemo(() => session?.errors ?? [], [session]);
 
     const fetchAIAdvice = useCallback(async (s: WorkoutSession) => {
         setIsLoadingAI(true);

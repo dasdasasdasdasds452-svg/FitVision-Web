@@ -165,9 +165,16 @@ export function loadHistory(): WorkoutSession[] {
         .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 }
 
+/** Copy of an error record without its clip URL (a blob: URL that dies with the tab). */
+export function withoutClipUrl(e: ErrorRecord): ErrorRecord {
+    const copy = { ...e };
+    delete copy.url;
+    return copy;
+}
+
 /** Clip URLs are blob: URLs that die with the tab, so they are not persisted. */
 function forStorage(s: WorkoutSession): WorkoutSession {
-    return { ...s, errors: s.errors.map(({ url: _url, ...rest }) => rest) };
+    return { ...s, errors: s.errors.map(withoutClipUrl) };
 }
 
 export function saveSessionToHistory(s: WorkoutSession): void {

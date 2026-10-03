@@ -1,6 +1,7 @@
 "use client";
 import DashboardLayout from "@/components/DashboardLayout";
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
+import { useHydrated } from "@/lib/useHydrated";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
 import {
@@ -18,12 +19,9 @@ import {
 export default function HistoryPage() {
     const { t, language } = useLanguage();
     const router = useRouter();
-    const [history, setHistory] = useState<WorkoutSession[]>([]);
+    const hydrated = useHydrated();
+    const history = useMemo<WorkoutSession[]>(() => (hydrated ? loadHistory() : []), [hydrated]);
     const [filter, setFilter] = useState<"all" | ExerciseId>("all");
-
-    useEffect(() => {
-        setHistory(loadHistory());
-    }, []);
 
     // Filter by exercise id (works in both languages and for old records)
     const filteredSessions = useMemo(() => {

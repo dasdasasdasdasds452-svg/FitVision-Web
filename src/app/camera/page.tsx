@@ -23,6 +23,7 @@ import { pushSession } from "@/lib/cloudSync";
 import { publishMyStats } from "@/lib/friends";
 import { GhostRep, RepRecorder, drawGhost, isBetterGhost, loadGhost, saveGhost } from "@/lib/ghostRep";
 import type { SetResult } from "@/lib/workoutStore";
+import type { MediaPipeCamera, MediaPipePose, MediaPipeWindow, PoseResults } from "@/types/mediapipe";
 
 function CameraContent() {
     const searchParams = useSearchParams();
@@ -162,7 +163,6 @@ function CameraContent() {
 
     // Auto-Capture Replay State
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const chunksRef = useRef<Blob[]>([]);
     const lastErrorTimeRef = useRef<number>(0);
 
     // Score smoothing: rolling window of last N predictions
@@ -211,8 +211,8 @@ function CameraContent() {
     }, []);
 
     // Developer Test Mode refs
-    const cameraWrapperRef = useRef<any>(null);
-    const poseWrapperRef = useRef<any>(null);
+    const cameraWrapperRef = useRef<MediaPipeCamera | null>(null);
+    const poseWrapperRef = useRef<MediaPipePose | null>(null);
     const isMockVideoPlaying = useRef<boolean>(false);
 
     const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -241,21 +241,21 @@ function CameraContent() {
             if (!isMockVideoPlaying.current || !videoElement || videoElement.paused || videoElement.ended) return;
             try {
                 if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
-                    await poseWrapperRef.current.send({ image: videoElement });
+                    await poseWrapperRef.current?.send({ image: videoElement });
                 }
             } catch (err) {
                 console.error("Mock Video Processing Error", err);
             }
-            if ((videoElement as any).requestVideoFrameCallback) {
-                (videoElement as any).requestVideoFrameCallback(processFrame);
+            if ("requestVideoFrameCallback" in videoElement) {
+                videoElement.requestVideoFrameCallback(processFrame);
             } else {
                 requestAnimationFrame(processFrame);
             }
         };
 
         videoElement.onplay = () => {
-            if ((videoElement as any).requestVideoFrameCallback) {
-                (videoElement as any).requestVideoFrameCallback(processFrame);
+            if ("requestVideoFrameCallback" in videoElement) {
+                videoElement.requestVideoFrameCallback(processFrame);
             } else {
                 requestAnimationFrame(processFrame);
             }
@@ -357,7 +357,7 @@ function CameraContent() {
     useEffect(() => {
         if (!areScriptsLoaded) return;
 
-        const win = window as any;
+        const win = window as unknown as MediaPipeWindow;
         const Pose = win.Pose;
         const Camera = win.Camera;
         const drawConnectors = win.drawConnectors;
@@ -366,7 +366,8 @@ function CameraContent() {
 
         if (!Pose || !Camera) return;
 
-        let camera: any = null;
+        let camera: MediaPipeCamera | null = null;
+        const videoEl = videoRef.current; // the same <video> for this effect's lifetime
         let isUnmounted = false;
         let frameCount = 0;
         let isPredicting = false;
@@ -395,7 +396,7 @@ function CameraContent() {
                 minTrackingConfidence: 0.5,
             });
 
-            pose.onResults(async (results: any) => {
+            pose.onResults(async (results: PoseResults) => {
                 if (isUnmounted) return;
                 setIsModelReady(true);
 
@@ -570,7 +571,7 @@ function CameraContent() {
 
                         (async () => {
                             try {
-                                let payload: any;
+                                let payload: Record<string, unknown>;
                                 if (exercise === 'squat') {
                                     const l_shoulder = lm[11], r_shoulder = lm[12];
                                     const l_hip = lm[23], r_hip = lm[24];
@@ -693,7 +694,7 @@ function CameraContent() {
                                                     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
                                                         mediaRecorderRef.current.stop();
                                                     }
-                                                    const stream = (canvasElement as any).captureStream(30);
+                                                    const stream = canvasElement.captureStream(30);
                                                     const mimeType = MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : '';
                                                     const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
                                                     const chunks: Blob[] = [];
@@ -777,10 +778,10 @@ function CameraContent() {
                 mediaRecorderRef.current.stop();
             }
 
-            if (videoRef.current && videoRef.current.srcObject) {
-                const stream = videoRef.current.srcObject as MediaStream;
+            if (videoEl && videoEl.srcObject) {
+                const stream = videoEl.srcObject as MediaStream;
                 stream.getTracks().forEach(t => t.stop());
-                videoRef.current.srcObject = null;
+                videoEl.srcObject = null;
             }
         };
     }, [areScriptsLoaded, facingMode]);
