@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React from "react";
 import { useLanguage } from "@/context/LanguageContext";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, isAuthPage } from "@/context/AuthContext";
 import UserAvatar, { useProfile } from "@/components/UserAvatar";
 
 interface NavItem {
@@ -21,7 +21,7 @@ export default function Sidebar() {
     const { logout } = useAuth();
     const profile = useProfile();
 
-    if (pathname.startsWith("/camera") || pathname.startsWith("/login")) {
+    if (pathname.startsWith("/camera") || isAuthPage(pathname)) {
         return null;
     }
 

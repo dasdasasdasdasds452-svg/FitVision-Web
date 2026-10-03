@@ -9,6 +9,7 @@ export const USER_SCOPED_KEYS = [
     "fitvision_avatar",
     "fitvision_height",
     "fitvision_weight",
+    "fitvision_age",
     "fitvision_last_setup",
     "fitvision_weekly_goal",
     "fitvision_missions",
@@ -66,6 +67,16 @@ export function getUserItem(base: UserScopedKey): string | null {
     if (typeof window === "undefined") return null;
     try {
         return window.localStorage.getItem(scopedKey(base));
+    } catch {
+        return null;
+    }
+}
+
+/** Read another account's value (e.g. right after sign-in, before the account switch renders). */
+export function getUserItemFor(base: UserScopedKey, account: string): string | null {
+    if (typeof window === "undefined") return null;
+    try {
+        return window.localStorage.getItem(scopedKey(base, account));
     } catch {
         return null;
     }

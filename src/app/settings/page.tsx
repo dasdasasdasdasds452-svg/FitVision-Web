@@ -6,6 +6,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
 import UserAvatar, { useProfile } from "@/components/UserAvatar";
 import { getUserItem, setUserItem } from "@/lib/userStorage";
+import { displayAccount } from "@/lib/phoneAuth";
 
 /** Shrink an uploaded photo to a small JPEG so it fits in localStorage (≈5 MB limit). */
 function resizeImage(file: File, size = 256): Promise<string> {
@@ -35,6 +36,7 @@ export default function SettingsPage() {
     const [imageError, setImageError] = useState(false);
     const [profileImage, setProfileImage] = useState<string | null>(null);
     const [displayName, setDisplayName] = useState("");
+    const [age, setAge] = useState("");
     const [height, setHeight] = useState("");
     const [weight, setWeight] = useState("");
 
@@ -55,6 +57,9 @@ export default function SettingsPage() {
         const storedName = getUserItem("fitvision_display_name");
         if (storedName) setDisplayName(storedName);
         else if (profile.name) setDisplayName(profile.name);
+
+        const storedAge = getUserItem("fitvision_age");
+        if (storedAge) setAge(storedAge);
 
         const storedHeight = getUserItem("fitvision_height");
         if (storedHeight) setHeight(storedHeight);
@@ -91,6 +96,7 @@ export default function SettingsPage() {
 
     const handleSaveChanges = () => {
         setUserItem("fitvision_display_name", displayName);
+        setUserItem("fitvision_age", age);
         setUserItem("fitvision_height", height);
         setUserItem("fitvision_weight", weight);
 
@@ -122,7 +128,7 @@ export default function SettingsPage() {
                 <section aria-labelledby="profile-h" className="rounded-3xl bg-surface-dark border border-white/10 p-5 md:p-6 flex flex-col gap-6">
                     <h2 id="profile-h" className="text-lg font-semibold text-white">{t.settings.biometric.title}</h2>
                     <div className="flex flex-wrap items-center gap-5">
-                        <UserAvatar profile={{ name: displayName || user?.email || "?", avatar: profileImage }} size={80} />
+                        <UserAvatar profile={{ name: displayName || displayAccount(user?.email) || "?", avatar: profileImage }} size={80} />
                         <div className="flex flex-col gap-1.5 items-start min-w-0">
                             <input type="file" className="sr-only" accept="image/*" ref={fileInputRef} onChange={handleImageUpload} id="avatar-input" />
                             <button
@@ -136,10 +142,14 @@ export default function SettingsPage() {
                             {imageError && <p role="alert" className="text-sm text-orange-300">{t.settings.imageTooLarge}</p>}
                         </div>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-4">
                         <div className="flex flex-col gap-1.5">
                             <label htmlFor="display-name" className="text-sm font-medium text-slate-200">{t.settings.biometric.displayName}</label>
                             <input id="display-name" className={inputClass} type="text" autoComplete="nickname" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                            <label htmlFor="age" className="text-sm font-medium text-slate-200">{`${t.register.ageLabel} (${t.register.ageUnit})`}</label>
+                            <input id="age" className={inputClass} type="number" inputMode="numeric" min={13} max={100} value={age} onChange={(e) => setAge(e.target.value)} />
                         </div>
                         <div className="flex flex-col gap-1.5">
                             <label htmlFor="height" className="text-sm font-medium text-slate-200">{t.settings.biometric.height}</label>
@@ -197,7 +207,7 @@ export default function SettingsPage() {
                     <div>
                         <h2 id="account-h" className="text-lg font-semibold text-white">{t.settings.account.title}</h2>
                         <p className="text-sm text-slate-300 break-all">
-                            {user?.email && user.id !== "demo-user-id" ? `${t.settings.account.signedInAs} ${user.email}` : t.settings.account.guest}
+                            {user?.email && user.id !== "demo-user-id" ? `${t.settings.account.signedInAs} ${displayAccount(user.email)}` : t.settings.account.guest}
                         </p>
                     </div>
                     <button

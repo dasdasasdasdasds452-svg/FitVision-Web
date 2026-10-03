@@ -4,6 +4,7 @@ import React from "react";
 import { usePathname } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
 import UserAvatar, { useProfile } from "@/components/UserAvatar";
+import { isAuthPage } from "@/context/AuthContext";
 
 export function LanguageToggle() {
     const { language, setLanguage } = useLanguage();
@@ -29,7 +30,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const pathname = usePathname();
     const profile = useProfile();
 
-    const hasNoSidebar = pathname?.startsWith("/camera") || pathname?.startsWith("/login");
+    const hasNoSidebar = pathname?.startsWith("/camera") || isAuthPage(pathname);
 
     return (
         <div className="relative flex min-h-screen w-full flex-col">

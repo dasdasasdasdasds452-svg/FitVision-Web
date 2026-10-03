@@ -4,16 +4,23 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase, isSupabaseConfigured } from "@/lib/supabaseClient";
 import type { User } from "@supabase/supabase-js";
-import { accountIdFor, getUserItem, setStorageAccount, setUserItem } from "@/lib/userStorage";
+import { accountIdFor, getUserItem, getUserItemFor, setStorageAccount, setUserItem } from "@/lib/userStorage";
 import { syncHistory } from "@/lib/cloudSync";
 import { publishMyStats } from "@/lib/friends";
+import { formatThaiPhone, isPhoneEmail } from "@/lib/phoneAuth";
 
 interface AuthContextType {
     isLoggedIn: boolean;
     user: User | null;
     logout: () => Promise<void>;
     loginAsDemo: () => void;
-    loginWithEmail: (email: string) => void;
+    /** Sign in locally as this account. `displayName` (from registration) replaces the default name. */
+    loginWithEmail: (email: string, displayName?: string) => void;
+}
+
+/** Pages a signed-out visitor may open (no sidebar, no redirect to /login). */
+export function isAuthPage(pathname: string | null | undefined): boolean {
+    return !!pathname && (pathname.startsWith("/login") || pathname.startsWith("/register"));
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -29,7 +36,8 @@ const DEMO_USER: User = {
 
 function createEmailUser(email: string): User {
     const cleanEmail = email.trim().toLowerCase();
-    const username = cleanEmail.split("@")[0] || "Athlete";
+    const prefix = cleanEmail.split("@")[0];
+    const username = isPhoneEmail(cleanEmail) ? formatThaiPhone(prefix) : prefix || "Athlete";
     return {
         id: "user-" + btoa(cleanEmail).replace(/[^a-zA-Z0-9]/g, "").slice(0, 12),
         app_metadata: {},
@@ -62,15 +70,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         setIsLoggedIn(true);
         setUser(DEMO_USER);
-        if (pathname === "/login") {
+        if (isAuthPage(pathname)) {
             router.push("/");
         }
     };
 
-    const loginWithEmail = (userEmail: string) => {
+    const loginWithEmail = (userEmail: string, displayName?: string) => {
         const cleanEmail = userEmail.trim().toLowerCase();
-        const username = cleanEmail.split("@")[0] || "Athlete";
         const emailUser = createEmailUser(cleanEmail);
+        const username = (emailUser.user_metadata?.name as string | undefined) || "Athlete";
 
         if (typeof window !== "undefined") {
             localStorage.removeItem("fitvision_logged_out");
@@ -78,7 +86,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Default display name for a new account only — never overwrite one the user chose.
             const account = accountIdFor(emailUser);
             setStorageAccount(account);
-            if (!getUserItem("fitvision_display_name")) setUserItem("fitvision_display_name", username, account);
+            const chosenName = displayName?.trim();
+            if (chosenName) setUserItem("fitvision_display_name", chosenName, account);
+            else if (!getUserItem("fitvision_display_name")) setUserItem("fitvision_display_name", username, account);
             window.dispatchEvent(new Event("profileUpdated"));
             window.dispatchEvent(new Event("avatarUpdated"));
         }
@@ -97,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 if (!isMounted) return;
                 setIsLoggedIn(false);
                 setUser(null);
-                if (pathname !== "/login") {
+                if (!isAuthPage(pathname)) {
                     router.push("/login");
                 }
                 return;
@@ -154,10 +164,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 if (session?.user) {
                     if (typeof window !== "undefined") {
                         localStorage.removeItem("fitvision_logged_out");
+                        if (session.user.email) localStorage.setItem("fitvision_user_email", session.user.email.trim().toLowerCase());
+                        // Google / Apple accounts: start with the name the provider gave us.
+                        const account = accountIdFor(session.user);
+                        const meta = session.user.user_metadata ?? {};
+                        const providerName = (meta.full_name || meta.name) as string | undefined;
+                        if (account && providerName && !getUserItemFor("fitvision_display_name", account)) {
+                            setUserItem("fitvision_display_name", providerName, account);
+                        }
                     }
                     setIsLoggedIn(true);
                     setUser(session.user);
-                    if (event === "SIGNED_IN" && pathname === "/login") {
+                    // /register finishes Google / Apple sign-up itself (asks for body data first).
+                    if (event === "SIGNED_IN" && pathname?.startsWith("/login")) {
                         router.push("/");
                     }
                 }
