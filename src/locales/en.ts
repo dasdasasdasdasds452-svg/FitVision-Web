@@ -591,6 +591,8 @@ export const en = {
         liveBadge: "Real-time form check",
         kneeAngle: "Knee {deg}°",
         poseAlt: "Example of squat pose tracking",
+        repLabel: "Rep",
+        formGood: "Good form",
         continueWithGoogle: "Continue with Google",
         continueWithApple: "Continue with Apple",
         oauthFailed: "Sign-in failed: {msg}",

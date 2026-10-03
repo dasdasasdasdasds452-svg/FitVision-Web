@@ -591,6 +591,8 @@ export const th = {
         liveBadge: "ตรวจท่าแบบเรียลไทม์",
         kneeAngle: "เข่า {deg}°",
         poseAlt: "ภาพตัวอย่างการจับท่าสควอต",
+        repLabel: "ครั้งที่",
+        formGood: "ฟอร์มดี",
         continueWithGoogle: "ดำเนินการต่อด้วย Google",
         continueWithApple: "ดำเนินการต่อด้วย Apple",
         oauthFailed: "เข้าสู่ระบบไม่สำเร็จ: {msg}",
