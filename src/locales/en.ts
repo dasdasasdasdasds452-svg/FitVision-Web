@@ -351,6 +351,7 @@ export const en = {
             subtitle: "Three things decide how accurate the AI is. It takes about a minute.",
             step: "Step",
             topView: "Seen from above",
+            cameraSees: "What the camera sees",
             doTitle: "Do: side view, whole body",
             dontTitle: "Avoid: front view, too close",
             exercisesTitle: "What the AI checks",
@@ -378,7 +379,7 @@ export const en = {
                 title: "02. Angle",
                 desc: "Position at a",
                 descHighlight: "45° or 90° angle",
-                descEnd: ". Avoid straight-on views to allow the AI to perceive depth and limb extension."
+                descEnd: "— 90° reads your back and depth best; use 45° if you also want left/right checks such as a caving knee or a raised shoulder. Avoid a close, straight-on view."
             },
             lighting: {
                 title: "03. Lighting",
