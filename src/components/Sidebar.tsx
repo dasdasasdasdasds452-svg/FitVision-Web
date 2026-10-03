@@ -28,9 +28,12 @@ export default function Sidebar() {
     const items: NavItem[] = [
         { href: "/", icon: "home", label: t.nav.home, match: [] },
         { href: "/history", icon: "insights", label: t.nav.history, match: ["/history", "/summary"] },
+        { href: "/friends", icon: "group", label: t.nav.friends, match: ["/friends"] },
         { href: "/chat", icon: "smart_toy", label: t.nav.aiCoach, match: ["/chat"] },
         { href: "/settings", icon: "settings", label: t.nav.settings, match: ["/settings"] },
     ];
+    // Mobile bar has room for four tabs around the camera button; friends is reached from Home there.
+    const mobileItems = items.filter((i) => i.href !== "/friends");
     const isActive = (item: NavItem) =>
         item.href === "/" ? pathname === "/" : item.match.some((m) => pathname.startsWith(m));
 
@@ -96,7 +99,7 @@ export default function Sidebar() {
 
             {/* Mobile Bottom Navigation — 5 targets, start in the middle, no logout here */}
             <nav aria-label={t.nav.home} className="md:hidden fixed bottom-0 left-0 right-0 bg-surface-dark/95 backdrop-blur-lg border-t border-white/10 grid grid-cols-5 items-center px-2 pt-2 z-50 pb-safe">
-                {[items[0], items[1]].map((item) => (
+                {[mobileItems[0], mobileItems[1]].map((item) => (
                     <MobileTab key={item.href} item={item} active={isActive(item)} />
                 ))}
                 <Link
@@ -109,7 +112,7 @@ export default function Sidebar() {
                     </span>
                     <span className="text-xs font-medium">{t.home.startTitle}</span>
                 </Link>
-                {[items[2], items[3]].map((item) => (
+                {[mobileItems[2], mobileItems[3]].map((item) => (
                     <MobileTab key={item.href} item={item} active={isActive(item)} />
                 ))}
             </nav>

@@ -10,12 +10,37 @@ import {
     ErrorRecord,
     WorkoutSession,
     cameraHref,
-    groupErrors,
+    errorKey,
+    loadHistory,
     loadCurrentSession,
     markCurrentSessionSeen,
     setCurrentSession,
     updateSessionInHistory,
 } from "@/lib/workoutStore";
+import { Achievement, achievementsFor, loadWeeklyGoal } from "@/lib/progress";
+import { describeIssue, parseIssueKey } from "@/lib/formAnalyzer";
+import { Mission, isCleanFor, loadMissions, missionProgress, refreshMissions, saveMissions } from "@/lib/missions";
+
+interface ErrorGroup {
+    key: string;
+    /** Body-part issue (left/right analysis) rather than a model-detected mistake. */
+    isIssue: boolean;
+    count: number;
+    records: ErrorRecord[];
+}
+
+/** Group mistakes by what went wrong (issue code + side, or title), most frequent first. */
+function groupByKey(errors: ErrorRecord[]): ErrorGroup[] {
+    const map = new Map<string, ErrorGroup>();
+    for (const e of errors) {
+        const key = errorKey(e);
+        const g = map.get(key) ?? { key, isIssue: Boolean(e.issueKey), count: 0, records: [] };
+        g.count += 1;
+        g.records.push(e);
+        map.set(key, g);
+    }
+    return [...map.values()].sort((a, b) => b.count - a.count);
+}
 
 function renderMarkdown(text: string): string {
     const raw = marked.parse(text, { async: false, breaks: true, gfm: true }) as string;
@@ -34,6 +59,10 @@ export default function SummaryPage() {
     const [aiAdvice, setAiAdvice] = useState("");
     const [isLoadingAI, setIsLoadingAI] = useState(false);
     const [aiFailed, setAiFailed] = useState(false);
+    const [achievements, setAchievements] = useState<Achievement[]>([]);
+    const [shareState, setShareState] = useState<"idle" | "copied">("idle");
+    const [ghostSaved, setGhostSaved] = useState(false);
+    const [missionNote, setMissionNote] =useState<{ kind: "pass" | "fail" | "done"; mission: Mission; done: number } | null>(null);
 
     const exerciseLabel = session ? t.camera.exerciseName[session.exerciseId] : "";
     const errors = session?.errors ?? [];
@@ -81,6 +110,25 @@ export default function SummaryPage() {
         setFresh(isFresh);
         setLoaded(true);
         if (!current) return;
+        setAchievements(achievementsFor(current, loadHistory(), loadWeeklyGoal()));
+        if (isFresh) {
+            try {
+                if (sessionStorage.getItem("fitvision_ghost_saved") === current.id) setGhostSaved(true);
+            } catch { /* ignore */ }
+            // Did this set move the fix-it mission forward?
+            const history = loadHistory();
+            const before = loadMissions();
+            const m = before.active;
+            if (
+                m && m.exerciseId === current.exerciseId && current.completedReps > 0 && current.avgScore !== null
+                && new Date(current.timestamp).getTime() >= new Date(m.startedAt).getTime()
+            ) {
+                const { state, justCompleted } = refreshMissions(before, history);
+                saveMissions(state);
+                if (justCompleted) setMissionNote({ kind: "done", mission: justCompleted, done: justCompleted.target });
+                else setMissionNote({ kind: isCleanFor(m, current) ? "pass" : "fail", mission: m, done: missionProgress(m, history).done });
+            }
+        }
         if (current.aiAdvice) {
             setAiAdvice(current.aiAdvice);
         } else if (isFresh && current.errors.length > 0) {
@@ -99,10 +147,17 @@ export default function SummaryPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const grouped = useMemo(() => groupErrors(errors), [errors]);
+    const grouped = useMemo(() => groupByKey(errors), [errors]);
     const top = grouped[0];
-    const topRecords = top ? errors.filter((e) => e.title === top[0]) : [];
-    const topExample: ErrorRecord | undefined = topRecords.find((e) => e.url) || topRecords[0];
+    const topExample: ErrorRecord | undefined = top ? top.records.find((e) => e.url) || top.records[0] : undefined;
+    /** Body-part issues (shoulder/hip/knee… left or right), excluding the one already shown as fix #1. */
+    const whereGroups = grouped.slice(1).filter((g) => g.isIssue);
+    const otherGroups = grouped.slice(1).filter((g) => !g.isIssue);
+    const issueText = (key: string | undefined) => {
+        const parsed = parseIssueKey(key);
+        return parsed ? describeIssue(parsed, t.body) : null;
+    };
+    const groupTitle = (g: ErrorGroup) => issueText(g.records[0].issueKey)?.title ?? g.records[0].title;
     const clips = errors.filter((e) => e.url);
 
     // Which reps had a problem (repNumber = reps completed when it was detected → the next rep)
@@ -139,6 +194,40 @@ export default function SummaryPage() {
     }
 
     const score = session.avgScore;
+    const verdict = score === null ? null
+        : score >= 90 && errors.length === 0 ? t.motivation.verdictGreat
+        : score >= 75 ? t.motivation.verdictGood
+        : t.motivation.verdictWork;
+    const achText = (a: Achievement): string => {
+        switch (a.kind) {
+            case "personal_best": return t.motivation.ach.personal_best.replace("{score}", String(a.score)).replace("{previous}", String(a.previous));
+            case "goal_reached": return t.motivation.ach.goal_reached.replace("{goal}", String(a.goal));
+            case "streak": return t.motivation.ach.streak.replace("{n}", String(a.days));
+            default: return t.motivation.ach[a.kind];
+        }
+    };
+    const achIcon: Record<Achievement["kind"], string> = {
+        first_session: "flag", personal_best: "trophy", perfect_set: "verified", goal_reached: "event_available", streak: "local_fire_department",
+    };
+    const share = async () => {
+        const text = t.motivation.shareText
+            .replace("{exercise}", exerciseLabel)
+            .replace("{reps}", String(session.completedReps))
+            .replace("{score}", score === null ? "–" : String(score));
+        try {
+            if (navigator.share) {
+                await navigator.share({ text });
+                return;
+            }
+            await navigator.clipboard.writeText(text);
+            setShareState("copied");
+            setTimeout(() => setShareState("idle"), 2000);
+        } catch {
+            /* user cancelled or clipboard blocked */
+        }
+    };
+    const missionIssue = missionNote ? (issueText(missionNote.mission.key)?.title ?? missionNote.mission.label) : "";
+    const setResults = session.sets && session.sets.length > 1 ? session.sets : null;
     const goalReached = session.repGoal > 0 && session.completedReps >= session.repGoal;
     const locale = language === "th" ? "th-TH" : "en-US";
 
@@ -160,7 +249,7 @@ export default function SummaryPage() {
                         >
                             <div className="size-[78px] rounded-full bg-background-dark flex flex-col items-center justify-center">
                                 <span className="text-2xl font-bold text-white tabular-nums leading-none">{score}</span>
-                                <span className="text-xs text-slate-400 mt-0.5">{t.summary.formAccuracy}</span>
+                                <span className="text-xs text-slate-400 mt-0.5">{t.camera.form}</span>
                             </div>
                         </div>
                     )}
@@ -168,9 +257,17 @@ export default function SummaryPage() {
                         <p className="text-sm text-slate-400">
                             {new Date(session.timestamp).toLocaleString(locale, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                         </p>
+                        {verdict && <p className="text-base font-semibold text-primary">{verdict}</p>}
                         <h1 className="text-2xl md:text-3xl font-semibold text-white leading-tight">
                             {exerciseLabel} {session.completedReps}/{session.repGoal} {t.home.repsUnit}
                         </h1>
+                        {(setResults || session.weightKg) && (
+                            <p className="text-sm text-slate-300 tabular-nums">
+                                {setResults && `${setResults.length}×${session.setGoal ?? Math.round(session.repGoal / setResults.length)}`}
+                                {setResults && session.weightKg ? " · " : ""}
+                                {session.weightKg ? `${session.weightKg} ${t.sets.kg}` : ""}
+                            </p>
+                        )}
                         <p className="text-sm mt-1">
                             {goalReached && <span className="text-primary font-medium mr-2">{t.summary.goalReached}</span>}
                             {errors.length === 0 ? (
@@ -182,6 +279,47 @@ export default function SummaryPage() {
                         {score === null && <p className="text-xs text-slate-400 mt-1">{t.summary.scoreUnavailable}</p>}
                     </div>
                 </header>
+
+                {/* ── What this set earned ── */}
+                {achievements.length > 0 && (
+                    <ul className="flex flex-col gap-2" aria-label={t.motivation.bestTitle}>
+                        {achievements.map((a, i) => (
+                            <li
+                                key={a.kind}
+                                className="animate-pop flex items-center gap-3 rounded-2xl px-4 py-3 bg-primary/10 border border-primary/30"
+                                style={{ animationDelay: `${i * 120}ms` }}
+                            >
+                                <span className="material-symbols-outlined filled text-primary text-2xl">{achIcon[a.kind]}</span>
+                                <span className="text-white font-medium">{achText(a)}</span>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+
+                {ghostSaved && (
+                    <p className="animate-pop rounded-2xl px-4 py-3 flex items-center gap-3 border bg-sky-300/10 border-sky-300/40 text-white font-medium">
+                        <span className="material-symbols-outlined text-sky-300 text-2xl">accessibility_new</span>
+                        {t.ghost.saved}
+                    </p>
+                )}
+
+                {/* ── Fix-it mission ── */}
+                {missionNote && (
+                    <section
+                        className={`animate-pop rounded-2xl px-4 py-3 flex items-center gap-3 border ${missionNote.kind === "fail" ? "bg-orange-500/10 border-orange-400/30" : "bg-primary/10 border-primary/30"}`}
+                        aria-live="polite"
+                    >
+                        <span className={`material-symbols-outlined filled text-2xl ${missionNote.kind === "fail" ? "text-orange-300" : "text-primary"}`}>
+                            {missionNote.kind === "done" ? "military_tech" : missionNote.kind === "pass" ? "task_alt" : "replay"}
+                        </span>
+                        <p className="text-white font-medium">
+                            {(missionNote.kind === "done" ? t.missions.done : missionNote.kind === "pass" ? t.missions.summaryPass : t.missions.summaryFail)
+                                .replace("{issue}", missionIssue)
+                                .replace("{done}", String(missionNote.done))
+                                .replace("{n}", String(missionNote.mission.target))}
+                        </p>
+                    </section>
+                )}
 
                 {/* ── Rep-by-rep strip ── */}
                 {repCount > 0 && (
@@ -204,19 +342,50 @@ export default function SummaryPage() {
                     </section>
                 )}
 
+                {/* ── Set by set ── */}
+                {setResults && (
+                    <section>
+                        <h2 className="text-sm text-slate-300 font-medium mb-2">{t.sets.table}</h2>
+                        <div className="rounded-2xl border border-white/10 bg-surface-dark overflow-hidden">
+                            <table className="w-full text-sm tabular-nums">
+                                <thead className="text-slate-400 text-left">
+                                    <tr className="border-b border-white/10">
+                                        <th scope="col" className="px-4 py-2 font-medium">{t.sets.set}</th>
+                                        <th scope="col" className="px-4 py-2 font-medium">{t.sets.reps}</th>
+                                        <th scope="col" className="px-4 py-2 font-medium">{t.sets.score}</th>
+                                        <th scope="col" className="px-4 py-2 font-medium">{t.sets.mistakes}</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {setResults.map((r) => (
+                                        <tr key={r.set}>
+                                            <th scope="row" className="px-4 py-2.5 text-left font-semibold text-white">{r.set}</th>
+                                            <td className="px-4 py-2.5 text-white">{r.reps}</td>
+                                            <td className={`px-4 py-2.5 font-semibold ${r.avgScore === null ? "text-slate-500" : r.avgScore >= 80 ? "text-primary" : "text-orange-300"}`}>
+                                                {r.avgScore === null ? "–" : r.avgScore}
+                                            </td>
+                                            <td className={`px-4 py-2.5 ${r.errorCount > 0 ? "text-orange-300" : "text-slate-400"}`}>{r.errorCount}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                )}
+
                 {/* ── Fix #1 ── */}
                 {top && topExample && (
                     <section className="rounded-3xl p-5 bg-orange-500/10 border border-orange-400/30 flex flex-col gap-3">
                         <p className="text-sm font-semibold text-orange-300">
-                            {t.summary.topFix} · {t.summary.foundTimes.replace("{n}", String(top[1]))}
+                            {t.summary.topFix} · {t.summary.foundTimes.replace("{n}", String(top.count))}
                         </p>
-                        <h2 className="text-xl font-semibold text-white">{top[0]}</h2>
+                        <h2 className="text-xl font-semibold text-white">{groupTitle(top)}</h2>
                         <div className="flex flex-col sm:flex-row gap-4">
                             {topExample.url && (
                                 <video src={topExample.url} className="w-full sm:w-56 aspect-video rounded-xl bg-black object-cover" controls loop muted playsInline />
                             )}
                             <div className="text-sm text-slate-200 leading-relaxed flex flex-col gap-2">
-                                <p>{topExample.detail}</p>
+                                <p>{issueText(topExample.issueKey)?.cue ?? topExample.detail}</p>
                                 {topExample.recommendation && <p className="text-slate-300">{topExample.recommendation}</p>}
                                 <button type="button" onClick={() => openDetail(topExample)} className="self-start text-orange-300 font-semibold hover:underline min-h-11 cursor-pointer">
                                     {t.summary.deepAnalysis} →
@@ -226,22 +395,53 @@ export default function SummaryPage() {
                     </section>
                 )}
 
+                {/* ── Where it went wrong: body part + side ── */}
+                {whereGroups.length > 0 && (
+                    <section>
+                        <h2 className="text-sm text-slate-300 font-medium">{t.body.whereTitle}</h2>
+                        <p className="text-xs text-slate-400 mb-2">{t.body.whereNote}</p>
+                        <ul className="rounded-2xl border border-orange-400/20 bg-surface-dark divide-y divide-white/5">
+                            {whereGroups.map((g) => {
+                                const text = issueText(g.records[0].issueKey);
+                                const perSet = setResults
+                                    ? setResults.map((r) => g.records.filter((e) => e.setNumber === r.set).length)
+                                    : null;
+                                return (
+                                    <li key={g.key} className="px-4 py-3 flex items-start gap-3">
+                                        <span className="material-symbols-outlined text-orange-300 mt-0.5">accessibility_new</span>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-white font-medium">{text?.title ?? g.records[0].title}</p>
+                                            <p className="text-sm text-slate-300">{text?.cue ?? g.records[0].detail}</p>
+                                            {perSet && (
+                                                <p className="text-xs text-slate-400 mt-1 tabular-nums">
+                                                    {perSet.map((n, i) => `${t.sets.set} ${i + 1}: ${t.body.timesInSet.replace("{n}", String(n))}`).join(" · ")}
+                                                </p>
+                                            )}
+                                        </div>
+                                        <span className="text-sm font-semibold text-orange-300 shrink-0 tabular-nums">×{g.count}</span>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    </section>
+                )}
+
                 {/* ── Other mistakes ── */}
-                {grouped.length > 1 && (
+                {otherGroups.length > 0 && (
                     <section>
                         <h2 className="text-sm text-slate-300 font-medium mb-2">{t.summary.frequentMistakes}</h2>
                         <ul className="rounded-2xl border border-white/10 bg-surface-dark divide-y divide-white/5">
-                            {grouped.slice(1).map(([title, count]) => {
-                                const example = errors.find((e) => e.title === title);
+                            {otherGroups.map((g) => {
+                                const example = g.records[0];
                                 return (
-                                    <li key={title}>
+                                    <li key={g.key}>
                                         <button
                                             type="button"
-                                            onClick={() => example && openDetail(example)}
+                                            onClick={() => openDetail(example)}
                                             className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-white/[0.04] cursor-pointer"
                                         >
-                                            <span className="text-white">{title}</span>
-                                            <span className="text-sm text-slate-400 shrink-0">×{count} <span className="material-symbols-outlined align-middle text-base">chevron_right</span></span>
+                                            <span className="text-white">{example.title}</span>
+                                            <span className="text-sm text-slate-400 shrink-0">×{g.count} <span className="material-symbols-outlined align-middle text-base">chevron_right</span></span>
                                         </button>
                                     </li>
                                 );
@@ -309,14 +509,22 @@ export default function SummaryPage() {
                 <div className="flex flex-col sm:flex-row gap-3 pt-2">
                     <Link
                         href={cameraHref(session.exerciseId, session.repGoal || 12)}
-                        className="flex-1 h-14 bg-primary text-background-dark font-semibold text-lg rounded-2xl flex items-center justify-center gap-2 hover:brightness-110"
+                        className="sm:flex-1 h-14 bg-primary text-background-dark font-semibold text-lg rounded-2xl flex items-center justify-center gap-2 hover:brightness-110"
                     >
                         <span className="material-symbols-outlined">replay</span>
                         {t.summary.actions.tryAgain}
                     </Link>
+                    <button
+                        type="button"
+                        onClick={share}
+                        className="h-14 px-6 border border-white/15 text-white font-medium text-lg rounded-2xl flex items-center justify-center gap-2 hover:bg-white/5 cursor-pointer"
+                    >
+                        <span className="material-symbols-outlined">{shareState === "copied" ? "check" : "ios_share"}</span>
+                        {shareState === "copied" ? t.motivation.copied : t.motivation.share}
+                    </button>
                     <Link
                         href="/"
-                        className="flex-1 h-14 border border-white/15 text-white font-medium text-lg rounded-2xl flex items-center justify-center gap-2 hover:bg-white/5"
+                        className="sm:flex-1 h-14 border border-white/15 text-white font-medium text-lg rounded-2xl flex items-center justify-center gap-2 hover:bg-white/5"
                     >
                         <span className="material-symbols-outlined">home</span>
                         {t.summary.actions.backToDashboard}

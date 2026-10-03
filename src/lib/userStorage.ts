@@ -10,6 +10,9 @@ export const USER_SCOPED_KEYS = [
     "fitvision_height",
     "fitvision_weight",
     "fitvision_last_setup",
+    "fitvision_weekly_goal",
+    "fitvision_missions",
+    "fitvision_ghost_reps",
 ] as const;
 export type UserScopedKey = (typeof USER_SCOPED_KEYS)[number];
 
@@ -52,6 +55,11 @@ export function setStorageAccount(account: string | null): void {
     if (account === currentAccount) return;
     currentAccount = account;
     if (account && typeof window !== "undefined") claimLegacyData(account);
+}
+
+/** The account whose data is currently read and written (lower-case email), if any. */
+export function getStorageAccount(): string | null {
+    return currentAccount;
 }
 
 export function getUserItem(base: UserScopedKey): string | null {

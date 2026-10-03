@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, Kanit } from "next/font/google";
 import Sidebar from "@/components/Sidebar";
 import { LanguageProvider } from "@/context/LanguageContext";
@@ -19,6 +19,17 @@ const kanit = Kanit({
 export const metadata: Metadata = {
   title: "FitVision — AI วิเคราะห์ท่าออกกำลังกาย",
   description: "วิเคราะห์ฟอร์ม Squat, Bench Press และ Deadlift แบบเรียลไทม์ด้วยกล้องมือถือ",
+  applicationName: "FitVision",
+  appleWebApp: { capable: true, title: "FitVision", statusBarStyle: "black-translucent" },
+  icons: {
+    icon: [{ url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#121212",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({

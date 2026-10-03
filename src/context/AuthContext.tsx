@@ -5,6 +5,8 @@ import { useRouter, usePathname } from "next/navigation";
 import { supabase, isSupabaseConfigured } from "@/lib/supabaseClient";
 import type { User } from "@supabase/supabase-js";
 import { accountIdFor, getUserItem, setStorageAccount, setUserItem } from "@/lib/userStorage";
+import { syncHistory } from "@/lib/cloudSync";
+import { publishMyStats } from "@/lib/friends";
 
 interface AuthContextType {
     isLoggedIn: boolean;
@@ -198,6 +200,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    // Cloud backup + friends' weekly totals. Runs per account; syncHistory/publishMyStats
+    // check for a real Supabase session themselves, so demo / email-only users stay on this device.
+    // (After a password sign-in the user object is the local email user, but the Supabase session exists.)
+    const [syncVersion, setSyncVersion] = useState(0);
+    const syncAccount = isSupabaseConfigured && user && user.id !== "demo-user-id" ? accountIdFor(user) : null;
+    useEffect(() => {
+        if (!syncAccount) return;
+        let cancelled = false;
+        syncHistory()
+            .then((r) => {
+                // Sessions arrived from another device: reload pages, but never in the middle of a workout.
+                if (!cancelled && r && r.pulled > 0 && !window.location.pathname.startsWith("/camera")) setSyncVersion((v) => v + 1);
+                return publishMyStats();
+            })
+            .catch((err) => console.warn("Cloud sync failed:", err));
+        return () => {
+            cancelled = true;
+        };
+    }, [syncAccount]);
+
     // Point per-account storage at the current user before any page reads it,
     // and remount pages when the account changes so they reload that account's data.
     const account = accountIdFor(user);
@@ -205,7 +227,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return (
         <AuthContext.Provider value={{ isLoggedIn, user, logout, loginAsDemo, loginWithEmail }}>
-            <React.Fragment key={account ?? "signed-out"}>{children}</React.Fragment>
+            <React.Fragment key={`${account ?? "signed-out"}:${syncVersion}`}>{children}</React.Fragment>
         </AuthContext.Provider>
     );
 }

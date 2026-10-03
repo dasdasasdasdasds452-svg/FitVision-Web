@@ -17,6 +17,12 @@ import {
     toExerciseId,
 } from "@/lib/workoutStore";
 import { loadWorkoutPrefs, speak, WorkoutPrefs } from "@/lib/userPrefs";
+import { Issue, IssueTracker, analyzePose, describeIssue, issueKey, parseIssueKey } from "@/lib/formAnalyzer";
+import { loadMissions } from "@/lib/missions";
+import { pushSession } from "@/lib/cloudSync";
+import { publishMyStats } from "@/lib/friends";
+import { GhostRep, RepRecorder, drawGhost, isBetterGhost, loadGhost, saveGhost } from "@/lib/ghostRep";
+import type { SetResult } from "@/lib/workoutStore";
 
 function CameraContent() {
     const searchParams = useSearchParams();
@@ -24,6 +30,15 @@ function CameraContent() {
     const model: ExerciseId = toExerciseId(searchParams.get("model") || "benchpress");
     const parsedReps = parseInt(searchParams.get("reps") || "12", 10);
     const repsParam = Number.isFinite(parsedReps) ? Math.min(50, Math.max(1, parsedReps)) : 12;
+
+    const clampInt = (v: string | null, min: number, max: number, dflt: number) => {
+        const n = parseInt(v || "", 10);
+        return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : dflt;
+    };
+    const setGoal = clampInt(searchParams.get("sets"), 1, 10, 1);
+    const restSeconds = clampInt(searchParams.get("rest"), 15, 300, 90);
+    const kgParam = parseFloat(searchParams.get("kg") || "");
+    const weightKg = Number.isFinite(kgParam) && kgParam > 0 ? Math.round(kgParam * 10) / 10 : null;
 
     const [currentExercise, setCurrentExercise] = useState<ExerciseId>(model);
     const [repGoal, setRepGoal] = useState(repsParam);
@@ -33,6 +48,19 @@ function CameraContent() {
 
     const [countdown, setCountdown] = useState<number | null>(null);
     const [currentReps, setCurrentReps] = useState(0);
+    const [currentSet, setCurrentSet] = useState(1);
+    const currentSetRef = useRef(1);
+    const [restLeft, setRestLeft] = useState<number | null>(null);
+    const restTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const setsRef = useRef<SetResult[]>([]);
+    const setStartRef = useRef({ score: 0, err: 0 });
+
+    // Body-part analysis (formAnalyzer): smoothed, with the most severe issue shown in the HUD
+    const trackerRef = useRef(new IssueTracker());
+    const [topIssue, setTopIssue] = useState<Issue | null>(null);
+    const topIssueKeyRef = useRef<string>("");
+    const issueLoggedAtRef = useRef(new Map<string, number>());
+    const [missionFocus, setMissionFocus] = useState<{ key: string; label: string } | null>(null);
     const [isSetupMinimized, setIsSetupMinimized] = useState(false);
 
     const repStateRef = useRef<"up" | "down">("up");
@@ -42,8 +70,27 @@ function CameraContent() {
     const tRef = useRef(t);
     const languageRef = useRef(language);
     useEffect(() => { tRef.current = t; languageRef.current = language; }, [t, language]);
-    const prefsRef = useRef<WorkoutPrefs>({ voiceFeedback: true, autoSaveClips: true, countdown: true });
-    useEffect(() => { prefsRef.current = loadWorkoutPrefs(); }, []);
+    const prefsRef = useRef<WorkoutPrefs>({ voiceFeedback: true, autoSaveClips: true, countdown: true, ghostRep: true });
+
+    // Ghost rep: the cleanest rep saved for this exercise, drawn as a dashed skeleton
+    const ghostRef = useRef<GhostRep | null>(null);
+    const [hasGhost, setHasGhost] = useState(false);
+    const [showGhost, setShowGhost] = useState(true);
+    const showGhostRef = useRef(true);
+    const recorderRef = useRef<{ exercise: ExerciseId; rec: RepRecorder } | null>(null);
+    const bestRepRef = useRef<GhostRep | null>(null);
+    const toggleGhost = () => {
+        const next = !showGhostRef.current;
+        showGhostRef.current = next;
+        setShowGhost(next);
+        try { localStorage.setItem("fitvision_ghost_rep", String(next)); } catch { /* ignore */ }
+    };
+
+    useEffect(() => {
+        prefsRef.current = loadWorkoutPrefs();
+        showGhostRef.current = prefsRef.current.ghostRep;
+        setShowGhost(prefsRef.current.ghostRep);
+    }, []);
 
     // Errors and scores of THIS session only (never carried over from earlier sessions)
     const errorsRef = useRef<ErrorRecord[]>([]);
@@ -52,6 +99,16 @@ function CameraContent() {
     useEffect(() => () => { if (countdownTimerRef.current) clearInterval(countdownTimerRef.current); }, []);
 
     const beginTracking = () => {
+        if (restTimerRef.current) clearInterval(restTimerRef.current);
+        setRestLeft(null);
+        setsRef.current = [];
+        setStartRef.current = { score: 0, err: 0 };
+        currentSetRef.current = 1;
+        setCurrentSet(1);
+        trackerRef.current.reset();
+        issueLoggedAtRef.current.clear();
+        topIssueKeyRef.current = "";
+        setTopIssue(null);
         errorsRef.current = [];
         statsRef.current.scores = [];
         recentPredictions.current = [];
@@ -60,6 +117,8 @@ function CameraContent() {
         repStateRef.current = "up";
         localRepCountRef.current = 0;
         setCurrentReps(0);
+        recorderRef.current = null;
+        bestRepRef.current = null;
         try { sessionStorage.removeItem('fitvision_errors'); } catch { /* ignore */ }
         setIsTrackingStarted(true);
         isTrackingStartedRef.current = true;
@@ -203,6 +262,85 @@ function CameraContent() {
         };
     };
 
+    /** Close the current set: slice this set's scores and mistakes into a SetResult. */
+    const finishSet = () => {
+        const n = currentSetRef.current;
+        if (setsRef.current.some((x) => x.set === n) || localRepCountRef.current === 0) return;
+        const scores = statsRef.current.scores.slice(setStartRef.current.score);
+        setsRef.current.push({
+            set: n,
+            reps: localRepCountRef.current,
+            avgScore: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
+            errorCount: errorsRef.current.length - setStartRef.current.err,
+        });
+    };
+
+    const startNextSet = () => {
+        if (restTimerRef.current) clearInterval(restTimerRef.current);
+        restTimerRef.current = null;
+        setRestLeft(null);
+        const n = currentSetRef.current + 1;
+        currentSetRef.current = n;
+        setCurrentSet(n);
+        setStartRef.current = { score: statsRef.current.scores.length, err: errorsRef.current.length };
+        localRepCountRef.current = 0;
+        repStateRef.current = "up";
+        setCurrentReps(0);
+        goalCelebratedRef.current = false;
+        trackerRef.current.reset();
+        isTrackingStartedRef.current = true;
+        if (prefsRef.current.voiceFeedback) speak(t.sets.spokenNext.replace("{n}", String(n)), language);
+    };
+
+    const startRest = () => {
+        isTrackingStartedRef.current = false; // pause counting + predictions while resting
+        let left = restSeconds;
+        setRestLeft(left);
+        if (prefsRef.current.voiceFeedback) speak(t.sets.spokenRest.replace("{s}", String(restSeconds)), language);
+        if (restTimerRef.current) clearInterval(restTimerRef.current);
+        restTimerRef.current = setInterval(() => {
+            left -= 1;
+            if (left <= 0) {
+                startNextSet();
+                return;
+            }
+            setRestLeft(left);
+            if (left <= 3 && prefsRef.current.voiceFeedback) speak(String(left), languageRef.current);
+        }, 1000);
+    };
+
+    // Rep goal reached: rest before the next set, or celebrate the last one
+    const goalCelebratedRef = useRef(false);
+    useEffect(() => {
+        if (!isTrackingStarted) { goalCelebratedRef.current = false; return; }
+        if (currentReps >= repGoal && repGoal > 0 && !goalCelebratedRef.current && restLeft === null) {
+            goalCelebratedRef.current = true;
+            try { navigator.vibrate?.([80, 60, 80]); } catch { /* not supported */ }
+            if (currentSetRef.current < setGoal) {
+                finishSet();
+                startRest();
+            } else if (prefsRef.current.voiceFeedback) {
+                speak(t.motivation.spokenGoal, language);
+            }
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentReps, repGoal, isTrackingStarted, restLeft]);
+
+    useEffect(() => {
+        const active = loadMissions().active;
+        const parsed = active ? parseIssueKey(active.key) : null;
+        const label = active ? (parsed ? describeIssue(parsed, t.body).title : active.label) : "";
+        setMissionFocus(active && active.exerciseId === currentExercise ? { key: active.key, label } : null);
+    }, [currentExercise, t]);
+
+    useEffect(() => {
+        ghostRef.current = loadGhost(currentExercise);
+        setHasGhost(ghostRef.current !== null);
+        recorderRef.current = null;
+    }, [currentExercise]);
+
+    useEffect(() => () => { if (restTimerRef.current) clearInterval(restTimerRef.current); }, []);
+
     const exerciseRef = useRef(currentExercise);
     useEffect(() => {
         exerciseRef.current = currentExercise;
@@ -341,8 +479,18 @@ function CameraContent() {
                             debugAngleRef.current.innerText = `Angle: ${Math.round(mainAngle)} | State: ${repStateRef.current}`;
                         }
 
+                        // Record this frame for the ghost rep (clean = good form and no body-part warning)
+                        const cw = canvasElement.width;
+                        const ch = canvasElement.height;
+                        if (!recorderRef.current || recorderRef.current.exercise !== exercise) {
+                            recorderRef.current = { exercise, rec: new RepRecorder(exercise, upThreshold) };
+                        }
+                        recorderRef.current.rec.push(lm, mainAngle, isGoodFormRef.current && trackerRef.current.current().length === 0, cw, ch);
+
                         if (mainAngle > upThreshold) {
                             if (repStateRef.current === "down") {
+                                const rep = recorderRef.current.rec.completeRep();
+                                if (rep && isBetterGhost(rep, bestRepRef.current)) bestRepRef.current = rep;
                                 localRepCountRef.current += 1;
                                 setCurrentReps(localRepCountRef.current);
                                 if (prefsRef.current.voiceFeedback) {
@@ -353,6 +501,65 @@ function CameraContent() {
                             repStateRef.current = "up";
                         } else if (mainAngle < downThreshold) {
                             repStateRef.current = "down";
+                        }
+
+                        // Ghost of the best rep, matched to how deep the person is right now
+                        if (showGhostRef.current && ghostRef.current && ghostRef.current.exerciseId === exercise) {
+                            drawGhost(canvasCtx, ghostRef.current, lm, mainAngle, repStateRef.current === "up", cw, ch);
+                        }
+                    }
+
+                    // ── Where is the form off? (body part + side) ──
+                    if (isTrackingStartedRef.current) {
+                        const started = trackerRef.current.update(analyzePose(lm, exercise));
+                        const active = trackerRef.current.current();
+
+                        // Ring the offending joints on the skeleton
+                        canvasCtx.save();
+                        canvasCtx.lineWidth = 5;
+                        canvasCtx.strokeStyle = "#FDBA74";
+                        for (const issue of active) {
+                            for (const j of issue.joints) {
+                                const p = lm[j];
+                                if (!p) continue;
+                                canvasCtx.beginPath();
+                                canvasCtx.arc(p.x * canvasElement.width, p.y * canvasElement.height, 22, 0, Math.PI * 2);
+                                canvasCtx.stroke();
+                            }
+                        }
+                        canvasCtx.restore();
+
+                        const top = active[0] ?? null;
+                        const topKey = top ? issueKey(top) : "";
+                        if (topKey !== topIssueKeyRef.current) {
+                            topIssueKeyRef.current = topKey;
+                            setTopIssue(top);
+                        }
+
+                        for (const issue of started) {
+                            const key = issueKey(issue);
+                            const now = Date.now();
+                            if (now - (issueLoggedAtRef.current.get(key) ?? 0) < 5000) continue;
+                            issueLoggedAtRef.current.set(key, now);
+                            const text = describeIssue(issue, tRef.current.body);
+                            const elapsedSec = Math.round((now - workoutStartTimeRef.current) / 1000);
+                            errorsRef.current.push({
+                                title: text.title,
+                                detail: text.cue,
+                                time: new Date(now).toLocaleTimeString(),
+                                elapsedSeconds: elapsedSec,
+                                elapsedFormatted: `${Math.floor(elapsedSec / 60)}:${(elapsedSec % 60).toString().padStart(2, '0')}`,
+                                repNumber: localRepCountRef.current,
+                                riskColor: '#FDBA74',
+                                exercise,
+                                issueKey: key,
+                                setNumber: currentSetRef.current,
+                            });
+                            try { sessionStorage.setItem('fitvision_errors', JSON.stringify(errorsRef.current)); } catch { /* ignore */ }
+                            if (prefsRef.current.voiceFeedback && now - lastSpokenAt > 3500) {
+                                speak(text.cue, languageRef.current);
+                                lastSpokenAt = now;
+                            }
                         }
                     }
 
@@ -589,6 +796,11 @@ function CameraContent() {
         }
         if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
 
+        if (restTimerRef.current) clearInterval(restTimerRef.current);
+        finishSet();
+        const sets = [...setsRef.current];
+        const totalReps = sets.length ? sets.reduce((a, x) => a + x.reps, 0) : localRepCountRef.current;
+
         const scores = statsRef.current.scores;
         // null (not 100) when the AI server never answered — don't show a fake perfect score
         const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
@@ -600,16 +812,30 @@ function CameraContent() {
             exercise: exerciseName,
             avgScore,
             errorCount: errors.length,
-            completedReps: localRepCountRef.current,
-            repGoal,
+            completedReps: totalReps,
+            repGoal: repGoal * Math.max(1, sets.length || 1),
             timestamp: new Date().toISOString(),
             errors,
+            setGoal,
+            sets: sets.length > 1 || setGoal > 1 ? sets : undefined,
+            weightKg,
+            restSeconds: setGoal > 1 ? restSeconds : undefined,
         };
 
         // Errors array is shared so clip URLs that finish after this point still reach the summary
         errorsRef.current = errors;
         setCurrentSession(sessionPayload, true);
         saveSessionToHistory(sessionPayload);
+
+        // Keep this session's cleanest rep as the ghost if it beats the saved one
+        const best = bestRepRef.current;
+        if (best && isBetterGhost(best, loadGhost(best.exerciseId))) {
+            saveGhost(best);
+            try { sessionStorage.setItem("fitvision_ghost_saved", sessionPayload.id); } catch { /* ignore */ }
+        }
+
+        // Cloud backup + weekly totals for friends (both no-ops unless signed in with Supabase)
+        void pushSession(sessionPayload).then(() => publishMyStats()).catch(() => { /* offline — next sync catches up */ });
 
         if (!isSupabaseConfigured) return;
         try {
@@ -650,7 +876,7 @@ function CameraContent() {
 
                     {/* Debug Display — dev only */}
                     {process.env.NODE_ENV === "development" && (
-                    <div ref={debugAngleRef} className="absolute top-20 left-4 z-50 bg-black/70 text-primary font-mono p-2 rounded text-sm pointer-events-none border border-primary/30">
+                    <div ref={debugAngleRef} className="absolute bottom-48 left-4 z-50 bg-black/70 text-primary font-mono p-2 rounded text-sm pointer-events-none border border-primary/30">
                         Angle: 0 | State: up
                     </div>
                     )}
@@ -958,13 +1184,13 @@ function CameraContent() {
                     )}
 
                     {/* ── Workout Complete Overlay ── */}
-                    {isTrackingStarted && currentReps >= repGoal && repGoal > 0 && (
+                    {isTrackingStarted && currentReps >= repGoal && repGoal > 0 && currentSet >= setGoal && restLeft === null && (
                         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
                             <div className="bg-[#111] border border-white/10 p-8 rounded-3xl max-w-sm w-full text-center flex items-center flex-col animate-in fade-in zoom-in duration-300">
                                 <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center mb-5 border border-primary/30">
                                     <span className="material-symbols-outlined text-primary text-5xl">task_alt</span>
                                 </div>
-                                <h2 className="text-3xl font-black text-white mb-2 tracking-tight">{t.camera.workoutComplete.title}</h2>
+                                <h2 className="text-3xl font-bold text-white mb-2">{t.motivation.goalHit.replace("{n}", String(repGoal))}</h2>
                                 <p className="text-white/60 text-sm mb-8 leading-relaxed">
                                     {t.camera.workoutComplete.subtitle1} <strong>{repGoal}</strong> {t.camera.reps.toLowerCase()} {t.camera.workoutComplete.subtitle2} <strong>{exerciseName}</strong>.
                                 </p>
@@ -976,6 +1202,7 @@ function CameraContent() {
                                 </Link>
                                 
                                 <button 
+                                    type="button"
                                     onClick={() => setRepGoal(prev => prev + 5)}
                                     className="mt-4 text-white/40 text-xs font-bold uppercase tracking-wider hover:text-white transition-colors py-2">
                                     {t.camera.workoutComplete.continue}
@@ -984,15 +1211,46 @@ function CameraContent() {
                         </div>
                     )}
 
+                    {/* ── Rest between sets ── */}
+                    {restLeft !== null && (
+                        <div role="timer" aria-live="polite" className="absolute inset-0 z-50 flex items-center justify-center bg-black/85 p-6">
+                            <div className="max-w-sm w-full text-center flex flex-col items-center gap-4">
+                                <p className="text-lg text-slate-300">{t.sets.resting} · {t.sets.setOf.replace("{n}", String(currentSet)).replace("{total}", String(setGoal))} ✓</p>
+                                <p className="text-sm text-slate-400">{t.sets.nextIn.replace("{n}", String(currentSet + 1))}</p>
+                                <p className="text-8xl font-bold text-white tabular-nums leading-none">{restLeft}</p>
+                                <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
+                                    <div className="h-full bg-primary transition-all duration-1000 ease-linear" style={{ width: `${(restLeft / restSeconds) * 100}%` }} />
+                                </div>
+                                {setsRef.current.length > 0 && (
+                                    <p className="text-sm text-slate-300">
+                                        {t.sets.set} {setsRef.current[setsRef.current.length - 1].set}: {setsRef.current[setsRef.current.length - 1].reps} {t.sets.reps}
+                                        {setsRef.current[setsRef.current.length - 1].avgScore !== null && ` · ${t.sets.score} ${setsRef.current[setsRef.current.length - 1].avgScore}%`}
+                                    </p>
+                                )}
+                                <button type="button" onClick={startNextSet} className="mt-2 h-14 w-full rounded-2xl bg-primary text-background-dark font-semibold text-lg cursor-pointer">
+                                    {t.sets.skipRest}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     <CameraMobileHUD props={{
                         t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, 
-                        currentReps, repGoal, exerciseName, endWorkoutData, riskLevel
+                        currentReps, repGoal, exerciseName, endWorkoutData, riskLevel,
+                        issue: topIssue ? describeIssue(topIssue, t.body) : null,
+                        setLabel: setGoal > 1 ? t.sets.setOf.replace("{n}", String(currentSet)).replace("{total}", String(setGoal)) : null,
+                        missionFocus: missionFocus ? t.missions.focus.replace("{cue}", missionFocus.label) : null,
+                        ghost: { available: hasGhost, on: showGhost, toggle: toggleGhost },
                     }} />
                 </div>
 
                 <CameraDesktopPanel props={{
                         t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, 
-                        currentReps, repGoal, exerciseName, endWorkoutData, riskLevel
+                        currentReps, repGoal, exerciseName, endWorkoutData, riskLevel,
+                        issue: topIssue ? describeIssue(topIssue, t.body) : null,
+                        setLabel: setGoal > 1 ? t.sets.setOf.replace("{n}", String(currentSet)).replace("{total}", String(setGoal)) : null,
+                        missionFocus: missionFocus ? t.missions.focus.replace("{cue}", missionFocus.label) : null,
+                        ghost: { available: hasGhost, on: showGhost, toggle: toggleGhost },
                     }} />
             </div>
         </div>

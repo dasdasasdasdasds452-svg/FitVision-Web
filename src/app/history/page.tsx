@@ -12,6 +12,7 @@ import {
     loadHistory,
     setCurrentSession,
     totalReps,
+    weightInsight,
 } from "@/lib/workoutStore";
 
 export default function HistoryPage() {
@@ -28,6 +29,14 @@ export default function HistoryPage() {
     const filteredSessions = useMemo(() => {
         if (filter === "all") return history;
         return history.filter(s => s.exerciseId === filter);
+    }, [history, filter]);
+
+    // Weight vs form, per exercise that has logged weights
+    const weightCards = useMemo(() => {
+        const ids = filter === "all" ? EXERCISE_IDS : [filter];
+        return ids
+            .filter((id) => history.some((s) => s.exerciseId === id && s.weightKg))
+            .map((id) => ({ id, insight: weightInsight(history, id) }));
     }, [history, filter]);
 
     // Stats follow the selected filter
@@ -178,6 +187,31 @@ export default function HistoryPage() {
                     </section>
                 )}
 
+                {weightCards.length > 0 && (
+                    <section aria-labelledby="weight-h" className="rounded-3xl bg-surface-dark border border-white/10 p-5 md:p-6">
+                        <h2 id="weight-h" className="text-base font-semibold text-white mb-3 flex items-center gap-2">
+                            <span className="material-symbols-outlined text-primary">fitness_center</span>
+                            {t.sets.weightTitle}
+                        </h2>
+                        <ul className="flex flex-col gap-3">
+                            {weightCards.map(({ id, insight }) => {
+                                const text = insight.kind === "break"
+                                    ? t.sets.weightBreak.replace("{ok}", String(insight.ok)).replace("{bad}", String(insight.bad))
+                                    : insight.kind === "all_good" ? t.sets.weightAllGood.replace("{max}", String(insight.max))
+                                    : insight.kind === "all_bad" ? t.sets.weightAllBad.replace("{min}", String(insight.min))
+                                    : t.sets.weightNeedData;
+                                const tone = insight.kind === "all_good" ? "text-primary" : insight.kind === "need_data" ? "text-slate-300" : "text-orange-300";
+                                return (
+                                    <li key={id} className="flex flex-col gap-0.5">
+                                        <span className="text-sm text-slate-400">{t.camera.exerciseName[id]}</span>
+                                        <span className={`font-medium ${tone}`}>{text}</span>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    </section>
+                )}
+
                 <section aria-labelledby="past-h" className="flex flex-col gap-3">
                     <h2 id="past-h" className="text-lg font-semibold text-white">
                         {t.history.pastSessions.title} <span className="text-slate-400 font-normal text-base">({filteredSessions.length})</span>
@@ -211,6 +245,8 @@ export default function HistoryPage() {
                                             <span className="block text-sm text-slate-400 truncate">
                                                 {new Date(session.timestamp).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })} · {new Date(session.timestamp).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}
                                                 {" · "}{session.completedReps}/{session.repGoal} {t.history.reps}
+                                                {session.sets && session.sets.length > 1 && ` (${session.sets.length}×${session.setGoal ?? Math.round(session.repGoal / session.sets.length)})`}
+                                                {session.weightKg ? ` · ${session.weightKg} ${t.sets.kg}` : ""}
                                                 {" · "}
                                                 {session.errorCount === 0
                                                     ? <span className="text-primary">{t.history.perfect}</span>

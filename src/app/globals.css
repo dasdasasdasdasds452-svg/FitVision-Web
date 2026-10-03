@@ -334,3 +334,24 @@
         scroll-behavior: auto !important;
     }
 }
+
+/* Celebration pop for achievements (disabled by the reduced-motion rule above) */
+@keyframes pop-in {
+    0% { opacity: 0; transform: scale(0.92) translateY(6px); }
+    60% { opacity: 1; transform: scale(1.02); }
+    100% { opacity: 1; transform: scale(1); }
+}
+.animate-pop {
+    opacity: 0;
+    animation: pop-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+/* Rep counter bump each time a rep is counted */
+@keyframes rep-bump {
+    0% { transform: scale(1.35); color: #39FF14; }
+    100% { transform: scale(1); }
+}
+.animate-rep {
+    display: inline-block;
+    animation: rep-bump 0.35s ease-out;
+}

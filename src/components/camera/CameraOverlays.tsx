@@ -24,6 +24,31 @@ export interface CameraOverlayProps {
     exerciseName: string;
     endWorkoutData: () => void;
     riskLevel: RiskLevelData | null;
+    /** Specific body-part issue from formAnalyzer, already translated. */
+    issue?: { title: string; cue: string } | null;
+    /** e.g. "Set 2/3" when training multiple sets. */
+    setLabel?: string | null;
+    /** e.g. "Focus: left knee caves in" while a fix-it mission is active. */
+    missionFocus?: string | null;
+    /** Ghost rep (best rep replayed as a dashed skeleton). */
+    ghost?: { available: boolean; on: boolean; toggle: () => void } | null;
+}
+
+/** On/off switch for the ghost rep. */
+function GhostToggle({ t, ghost, className }: { t: any; ghost: NonNullable<CameraOverlayProps["ghost"]>; className: string }) {
+    return (
+        <button
+            type="button"
+            role="switch"
+            aria-checked={ghost.on}
+            aria-label={t.ghost.toggle}
+            onClick={ghost.toggle}
+            className={`${className} inline-flex items-center gap-2 rounded-full border font-semibold transition-colors cursor-pointer ${ghost.on ? "bg-sky-300/20 border-sky-300/60 text-sky-200" : "bg-black/60 border-white/20 text-white/70"}`}
+        >
+            <span className="material-symbols-outlined text-lg">{ghost.on ? "visibility" : "visibility_off"}</span>
+            {t.ghost.label}: {ghost.on ? t.ghost.on : t.ghost.off}
+        </button>
+    );
 }
 
 /**
@@ -56,10 +81,15 @@ function EndWorkoutButton({ t, endWorkoutData, className }: { t: any; endWorkout
 }
 
 export function CameraMobileHUD({ props }: { props: CameraOverlayProps }) {
-    const { t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, currentReps, repGoal, endWorkoutData, riskLevel } = props;
+    const { t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, currentReps, repGoal, endWorkoutData, riskLevel, issue, setLabel, missionFocus, ghost } = props;
     const { language } = useLanguage();
 
     if (!isTrackingStarted) return null;
+
+    // A specific body-part issue is more useful than the generic verdict, so it wins the banner.
+    const warn = !!issue || !isGoodForm;
+    const bannerTitle = issue ? issue.title : feedbackTitle;
+    const bannerDetail = issue ? issue.cue : feedbackDetail;
 
     const mobileRiskLabel = riskLevel
         ? (language === "th" ? riskLevel.label_th : (riskLevel.label || riskLevel.label_th))
@@ -67,21 +97,30 @@ export function CameraMobileHUD({ props }: { props: CameraOverlayProps }) {
 
     return (
         <>
+            {ghost?.available && (
+                <GhostToggle t={t} ghost={ghost} className="lg:hidden absolute top-[4.5rem] left-3 z-20 h-10 px-3 text-sm" />
+            )}
+
             {/* Big rep counter — readable from 2–3 m away */}
             <div className="lg:hidden absolute top-16 right-3 z-20 text-right leading-none pointer-events-none" aria-live="polite">
-                <span className="text-white font-black text-6xl tabular-nums drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">{currentReps}</span>
+                <span key={currentReps} className="animate-rep text-white font-black text-6xl tabular-nums drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">{currentReps}</span>
                 <span className="text-white/70 font-bold text-2xl">/{repGoal}</span>
-                <div className="text-white/80 text-sm font-semibold mt-1 drop-shadow">{t.camera.reps}</div>
+                <div className="text-white/80 text-sm font-semibold mt-1 drop-shadow">{setLabel ? `${t.camera.reps} · ${setLabel}` : t.camera.reps}</div>
             </div>
 
             {/* Form feedback banner — orange when something needs fixing */}
-            <div role="status" className={`lg:hidden absolute top-40 left-3 right-3 z-20 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-xl transition-colors ${isGoodForm ? "bg-black/70 border border-primary/40" : "bg-orange-400 text-black"}`}>
-                <span className={`material-symbols-outlined text-3xl shrink-0 ${isGoodForm ? "text-primary" : "text-black"}`}>{isGoodForm ? "check_circle" : "warning"}</span>
+            <div role="status" className={`lg:hidden absolute top-40 left-3 right-3 z-20 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-xl transition-colors ${!warn ? "bg-black/70 border border-primary/40" : "bg-orange-400 text-black"}`}>
+                <span className={`material-symbols-outlined text-3xl shrink-0 ${!warn ? "text-primary" : "text-black"}`}>{!warn ? "check_circle" : "warning"}</span>
                 <div className="min-w-0">
-                    <p className={`font-bold text-xl leading-tight ${isGoodForm ? "text-primary" : "text-black"}`}>{feedbackTitle}</p>
-                    <p className={`text-base leading-snug line-clamp-2 ${isGoodForm ? "text-white/85" : "text-black/85"}`}>{feedbackDetail}</p>
+                    <p className={`font-bold text-xl leading-tight ${!warn ? "text-primary" : "text-black"}`}>{bannerTitle}</p>
+                    <p className={`text-base leading-snug line-clamp-2 ${!warn ? "text-white/85" : "text-black/85"}`}>{bannerDetail}</p>
                 </div>
             </div>
+            {missionFocus && (
+                <p className="lg:hidden absolute top-[17.5rem] left-3 right-3 z-20 text-sm text-white bg-black/60 rounded-xl px-3 py-2 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-lg">flag</span>{missionFocus}
+                </p>
+            )}
 
             <div className="lg:hidden relative z-20 mt-auto p-3 pb-4">
                 <div className="flex items-center justify-between mb-2 px-1 text-sm">
@@ -105,7 +144,7 @@ export function CameraMobileHUD({ props }: { props: CameraOverlayProps }) {
 }
 
 export function CameraDesktopPanel({ props }: { props: CameraOverlayProps }) {
-    const { t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, currentReps, repGoal, exerciseName, endWorkoutData, riskLevel } = props;
+    const { t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, currentReps, repGoal, exerciseName, endWorkoutData, riskLevel, issue, setLabel, missionFocus, ghost } = props;
     const { language } = useLanguage();
     
     if (!isTrackingStarted) return null;
@@ -125,7 +164,7 @@ export function CameraDesktopPanel({ props }: { props: CameraOverlayProps }) {
                 <span className="material-symbols-outlined text-primary text-3xl">fitness_center</span>
                 <div>
                     <h3 className="text-white font-bold text-lg leading-tight">{exerciseName}</h3>
-                    <p className="text-white/40 text-xs">{t.camera.aiPowered}</p>
+                    <p className="text-white/60 text-xs">{setLabel || t.camera.aiPowered}</p>
                 </div>
             </div>
 
@@ -141,6 +180,34 @@ export function CameraDesktopPanel({ props }: { props: CameraOverlayProps }) {
                     <p className={`text-xs mt-1 leading-relaxed ${isGoodForm ? "text-white/50" : "text-orange-100/80"}`}>{feedbackDetail}</p>
                 </div>
             </div>
+
+            {issue && (
+                <div role="status" className="rounded-2xl p-4 bg-orange-400 text-black">
+                    <p className="text-xs font-semibold opacity-80">{t.body.whereTitle}</p>
+                    <p className="font-bold text-lg leading-tight mt-0.5">{issue.title}</p>
+                    <p className="text-sm mt-1">{issue.cue}</p>
+                </div>
+            )}
+            {missionFocus && (
+                <p className="text-sm text-white bg-white/5 border border-white/10 rounded-2xl px-4 py-3 flex items-start gap-2">
+                    <span className="material-symbols-outlined text-primary text-lg">flag</span>{missionFocus}
+                </p>
+            )}
+
+            {ghost && (
+                <div className="rounded-2xl p-4 border border-white/10 bg-white/5 flex flex-col gap-2">
+                    {ghost.available ? (
+                        <>
+                            <GhostToggle t={t} ghost={ghost} className="self-start h-10 px-3 text-sm" />
+                            {ghost.on && <p className="text-xs text-white/60">{t.ghost.legend}</p>}
+                        </>
+                    ) : (
+                        <p className="text-xs text-white/60 flex items-start gap-2">
+                            <span className="material-symbols-outlined text-sky-300 text-lg">accessibility_new</span>{t.ghost.none}
+                        </p>
+                    )}
+                </div>
+            )}
 
             {/* ── Injury Risk Assessment Card ── */}
             <div className="rounded-2xl p-4 border border-white/10 bg-white/5">
@@ -182,7 +249,7 @@ export function CameraDesktopPanel({ props }: { props: CameraOverlayProps }) {
                     <div>
                         <span className="text-white/40 text-xs uppercase tracking-wider font-bold block">{t.camera.repCount}</span>
                         <div className="text-4xl font-black text-white mt-1">
-                            <span className="text-white">{currentReps}</span>
+                            <span key={currentReps} className="animate-rep text-white">{currentReps}</span>
                             <span className="text-white/20 text-2xl">/{repGoal}</span>
                         </div>
                     </div>

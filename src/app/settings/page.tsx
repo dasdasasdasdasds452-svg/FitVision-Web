@@ -41,6 +41,7 @@ export default function SettingsPage() {
     const [voiceFeedback, setVoiceFeedback] = useState(true);
     const [autoSave, setAutoSave] = useState(true);
     const [countdown, setCountdown] = useState(true);
+    const [ghostRep, setGhostRep] = useState(true);
 
     // Check if saving is showing feedback
     const [showSavedFeedback, setShowSavedFeedback] = useState(false);
@@ -69,6 +70,9 @@ export default function SettingsPage() {
 
         const storedCountdown = localStorage.getItem('fitvision_countdown');
         if (storedCountdown !== null) setCountdown(storedCountdown === 'true');
+
+        const storedGhost = localStorage.getItem('fitvision_ghost_rep');
+        if (storedGhost !== null) setGhostRep(storedGhost === 'true');
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -101,6 +105,7 @@ export default function SettingsPage() {
         { key: "fitvision_voice_feedback", value: voiceFeedback, set: setVoiceFeedback, ...t.settings.aiPreferences.voice },
         { key: "fitvision_auto_save", value: autoSave, set: setAutoSave, ...t.settings.aiPreferences.autoSave },
         { key: "fitvision_countdown", value: countdown, set: setCountdown, ...t.settings.aiPreferences.countdown },
+        { key: "fitvision_ghost_rep", value: ghostRep, set: setGhostRep, ...t.settings.aiPreferences.ghost },
     ];
     const inputClass =
         "w-full h-12 bg-white/[0.04] border border-white/15 rounded-xl px-4 text-white placeholder:text-slate-500 focus:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";

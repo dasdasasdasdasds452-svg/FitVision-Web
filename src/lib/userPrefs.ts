@@ -4,6 +4,8 @@ export interface WorkoutPrefs {
     voiceFeedback: boolean;
     autoSaveClips: boolean;
     countdown: boolean;
+    /** Show the best rep as a dashed "ghost" skeleton during the set. */
+    ghostRep: boolean;
 }
 
 function readBool(key: string, fallback: boolean): boolean {
@@ -21,6 +23,7 @@ export function loadWorkoutPrefs(): WorkoutPrefs {
         voiceFeedback: readBool("fitvision_voice_feedback", true),
         autoSaveClips: readBool("fitvision_auto_save", true),
         countdown: readBool("fitvision_countdown", true),
+        ghostRep: readBool("fitvision_ghost_rep", true),
     };
 }
 

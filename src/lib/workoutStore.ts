@@ -23,6 +23,16 @@ export interface ErrorRecord {
     riskFactors?: string[];
     recommendation?: string;
     exercise?: string;
+    /** Body-part issue from formAnalyzer, e.g. "knee_valgus:left". Stable across languages. */
+    issueKey?: string;
+    setNumber?: number;
+}
+
+export interface SetResult {
+    set: number;
+    reps: number;
+    avgScore: number | null;
+    errorCount: number;
 }
 
 export interface WorkoutSession {
@@ -38,12 +48,20 @@ export interface WorkoutSession {
     timestamp: string;
     errors: ErrorRecord[];
     aiAdvice?: string;
+    /** Planned number of sets (1 for older records). */
+    setGoal?: number;
+    sets?: SetResult[];
+    weightKg?: number | null;
+    restSeconds?: number;
 }
+
+/** Key used to match the same mistake across sessions and languages. */
+export const errorKey = (e: Pick<ErrorRecord, "issueKey" | "title">) => e.issueKey || e.title;
 
 const SESSION_KEY = "fitvision_session_stats";
 const ERRORS_KEY = "fitvision_errors";
 const FRESH_KEY = "fitvision_session_fresh";
-const MAX_HISTORY = 50;
+const MAX_HISTORY = 200;
 
 /** Map any stored exercise value (id, English or Thai display name) to an id. */
 export function toExerciseId(value: unknown): ExerciseId {
@@ -100,6 +118,8 @@ function normalizeError(raw: unknown): ErrorRecord | null {
         riskFactors: Array.isArray(r.riskFactors) ? r.riskFactors.map(String) : undefined,
         recommendation: typeof r.recommendation === "string" ? r.recommendation : undefined,
         exercise: typeof r.exercise === "string" ? r.exercise : undefined,
+        issueKey: typeof r.issueKey === "string" ? r.issueKey : undefined,
+        setNumber: r.setNumber === undefined ? undefined : toNumber(r.setNumber, 1),
     };
 }
 
@@ -122,6 +142,16 @@ export function normalizeSession(raw: unknown): WorkoutSession | null {
         timestamp: ts,
         errors,
         aiAdvice: typeof r.aiAdvice === "string" && r.aiAdvice ? r.aiAdvice : undefined,
+        setGoal: r.setGoal === undefined ? undefined : toNumber(r.setGoal, 1),
+        sets: Array.isArray(r.sets)
+            ? r.sets.map((x, i) => {
+                const o = (x && typeof x === "object" ? x : {}) as Record<string, unknown>;
+                const sc = o.avgScore === null || o.avgScore === undefined ? null : toNumber(o.avgScore, NaN);
+                return { set: toNumber(o.set, i + 1), reps: toNumber(o.reps, 0), avgScore: sc === null || Number.isNaN(sc) ? null : Math.round(sc), errorCount: toNumber(o.errorCount, 0) };
+            })
+            : undefined,
+        weightKg: r.weightKg === null || r.weightKg === undefined ? undefined : (Number.isFinite(Number(r.weightKg)) && Number(r.weightKg) > 0 ? Number(r.weightKg) : undefined),
+        restSeconds: r.restSeconds === undefined ? undefined : toNumber(r.restSeconds, 90),
     };
 }
 
@@ -144,6 +174,11 @@ export function saveSessionToHistory(s: WorkoutSession): void {
     const history = loadHistory().filter((h) => h.id !== s.id);
     history.unshift(forStorage(s));
     writeJSON(local(), scopedKey("fitvision_history"), history.slice(0, MAX_HISTORY));
+}
+
+/** Replace the whole history (used by cloud sync after merging). */
+export function replaceHistory(sessions: WorkoutSession[]): void {
+    writeJSON(local(), scopedKey("fitvision_history"), sessions.slice(0, 200).map(forStorage));
 }
 
 export function updateSessionInHistory(id: string, patch: Partial<WorkoutSession>): void {
@@ -228,7 +263,7 @@ export function mostFrequentError(sessions: WorkoutSession[], lookback = 5): Fre
     const recent = sessions.slice(0, lookback);
     const counts = new Map<string, { n: number; exerciseId: ExerciseId }>();
     for (const s of recent) {
-        const titles = new Set(s.errors.map((e) => e.title).filter(Boolean));
+        const titles = new Set(s.errors.map((e) => e.title).filter(Boolean)); // grouped by display title
         for (const title of titles) {
             const key = `${s.exerciseId}::${title}`;
             const prev = counts.get(key);
@@ -253,6 +288,46 @@ export function groupErrors(errors: ErrorRecord[]): [string, number][] {
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
 }
 
-export function cameraHref(exerciseId: ExerciseId, reps: number): string {
-    return `/camera?model=${exerciseId}&reps=${Math.max(1, Math.round(reps) || 12)}`;
+export interface CameraSetup {
+    sets?: number;
+    rest?: number;
+    kg?: number | null;
+}
+
+export function cameraHref(exerciseId: ExerciseId, reps: number, setup: CameraSetup = {}): string {
+    const q = new URLSearchParams({ model: exerciseId, reps: String(Math.max(1, Math.round(reps) || 12)) });
+    if (setup.sets && setup.sets > 1) q.set("sets", String(setup.sets));
+    if (setup.rest) q.set("rest", String(setup.rest));
+    if (setup.kg && setup.kg > 0) q.set("kg", String(setup.kg));
+    return `/camera?${q.toString()}`;
+}
+
+export interface WeightInsight {
+    kind: "need_data" | "all_good" | "all_bad" | "break";
+    ok?: number;
+    bad?: number;
+    max?: number;
+    min?: number;
+}
+
+/** A session "holds form" when the score is ≥ 80% with at most one mistake. */
+const holdsForm = (s: WorkoutSession) => s.avgScore !== null && s.avgScore >= 80 && s.errorCount <= 1;
+
+/** Find the lightest weight where form starts to break, from sessions that logged a weight. */
+export function weightInsight(sessions: WorkoutSession[], exerciseId: ExerciseId): WeightInsight {
+    const byWeight = new Map<number, WorkoutSession[]>();
+    for (const s of sessions) {
+        if (s.exerciseId !== exerciseId || !s.weightKg || s.avgScore === null) continue;
+        byWeight.set(s.weightKg, [...(byWeight.get(s.weightKg) ?? []), s]);
+    }
+    const weights = [...byWeight.keys()].sort((a, b) => a - b);
+    if (weights.length < 2) return { kind: "need_data" };
+    const ok = (w: number) => {
+        const list = byWeight.get(w) ?? [];
+        return list.filter(holdsForm).length * 2 > list.length; // strict majority: a 50/50 weight counts as breaking (safer)
+    };
+    const firstBad = weights.findIndex((w) => !ok(w));
+    if (firstBad === -1) return { kind: "all_good", max: weights[weights.length - 1] };
+    if (firstBad === 0) return { kind: "all_bad", min: weights[0] };
+    return { kind: "break", ok: weights[firstBad - 1], bad: weights[firstBad] };
 }
