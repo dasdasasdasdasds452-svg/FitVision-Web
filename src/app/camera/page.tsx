@@ -23,7 +23,33 @@ import { pushSession } from "@/lib/cloudSync";
 import { publishMyStats } from "@/lib/friends";
 import { GhostRep, RepRecorder, drawGhost, isBetterGhost, loadGhost, saveGhost } from "@/lib/ghostRep";
 import type { SetResult } from "@/lib/workoutStore";
-import type { MediaPipeCamera, MediaPipePose, MediaPipeWindow, PoseResults } from "@/types/mediapipe";
+import type { MediaPipePose, MediaPipeWindow, PoseResults } from "@/types/mediapipe";
+
+type Facing = "user" | "environment";
+
+const BACK_LABEL = /back|rear|environment|world|หลัง/i;
+const FRONT_LABEL = /front|user|facetime|selfie|หน้า/i;
+
+/** Which way a track faces: what the browser reports, else a guess from the device label. */
+function facingOfTrack(track: MediaStreamTrack | undefined): Facing | null {
+    if (!track) return null;
+    const reported = track.getSettings().facingMode;
+    if (reported === "environment" || reported === "user") return reported;
+    if (BACK_LABEL.test(track.label)) return "environment";
+    if (FRONT_LABEL.test(track.label)) return "user";
+    return null;
+}
+
+/** Another camera to try when `facingMode` can't move us off the current one (e.g. some Android phones). */
+function pickOtherCamera(cams: MediaDeviceInfo[], currentId: string | null, want: Facing): string | null {
+    const others = cams.filter((c) => c.deviceId && c.deviceId !== currentId);
+    if (others.length === 0) return null;
+    const byLabel = others.find((c) => (want === "environment" ? BACK_LABEL : FRONT_LABEL).test(c.label));
+    if (byLabel) return byLabel.deviceId;
+    // No useful labels: take the next camera after the current one in the list
+    const i = cams.findIndex((c) => c.deviceId === currentId);
+    return (cams.slice(i + 1).find((c) => c.deviceId !== currentId) ?? others[0]).deviceId;
+}
 
 function CameraContent() {
     const searchParams = useSearchParams();
@@ -43,7 +69,36 @@ function CameraContent() {
 
     const [currentExercise, setCurrentExercise] = useState<ExerciseId>(model);
     const [repGoal, setRepGoal] = useState(repsParam);
-    const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
+    /** What the camera effect should open: `isSwitch` = flip away from the camera that is open now. */
+    const [cameraRequest, setCameraRequest] = useState<{ facing: Facing; isSwitch: boolean; n: number }>(
+        { facing: "user", isSwitch: false, n: 0 });
+    /** Which way the open camera really faces (desktop webcams may ignore the request). */
+    const [actualFacing, setActualFacing] = useState<Facing>("user");
+    const [cameraCount, setCameraCount] = useState(0); // 0 = not known yet
+    const [isSwitchingCamera, setIsSwitchingCamera] = useState(true);
+    const [cameraError, setCameraError] = useState(false);
+    const [cameraNotice, setCameraNotice] = useState<{ text: string; failed: boolean } | null>(null);
+    const cameraNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const deviceIdRef = useRef<string | null>(null);
+    /** Camera opens run one after another — a phone can't open the next camera while the last is still opening. */
+    const cameraQueueRef = useRef<Promise<void>>(Promise.resolve());
+    const switchCamera = () => {
+        if (isSwitchingCamera) return;
+        setIsSwitchingCamera(true);
+        setCameraError(false);
+        setCameraRequest((r) => ({ facing: actualFacing === "user" ? "environment" : "user", isSwitch: true, n: r.n + 1 }));
+    };
+    const retryCamera = () => {
+        setIsSwitchingCamera(true);
+        setCameraError(false);
+        setCameraRequest((r) => ({ ...r, isSwitch: false, n: r.n + 1 }));
+    };
+    const showCameraNotice = (text: string, failed: boolean) => {
+        if (cameraNoticeTimerRef.current) clearTimeout(cameraNoticeTimerRef.current);
+        setCameraNotice({ text, failed });
+        cameraNoticeTimerRef.current = setTimeout(() => setCameraNotice(null), failed ? 3500 : 1600);
+    };
+    useEffect(() => () => { if (cameraNoticeTimerRef.current) clearTimeout(cameraNoticeTimerRef.current); }, []);
     const [isTrackingStarted, setIsTrackingStarted] = useState(false);
     const isTrackingStartedRef = useRef(false);
 
@@ -211,7 +266,6 @@ function CameraContent() {
     }, []);
 
     // Developer Test Mode refs
-    const cameraWrapperRef = useRef<MediaPipeCamera | null>(null);
     const poseWrapperRef = useRef<MediaPipePose | null>(null);
     const isMockVideoPlaying = useRef<boolean>(false);
 
@@ -219,9 +273,8 @@ function CameraContent() {
         const file = e.target.files?.[0];
         if (!file || !videoRef.current || !poseWrapperRef.current) return;
 
-        if (cameraWrapperRef.current) {
-            cameraWrapperRef.current.stop();
-        }
+        // Release the live camera; the uploaded video takes its place in the same <video>.
+        (videoRef.current.srcObject as MediaStream | null)?.getTracks().forEach((t) => t.stop());
 
         const videoUrl = URL.createObjectURL(file);
         const videoElement = videoRef.current;
@@ -359,15 +412,14 @@ function CameraContent() {
 
         const win = window as unknown as MediaPipeWindow;
         const Pose = win.Pose;
-        const Camera = win.Camera;
         const drawConnectors = win.drawConnectors;
         const drawLandmarks = win.drawLandmarks;
         const POSE_CONNECTIONS = win.POSE_CONNECTIONS;
 
-        if (!Pose || !Camera) return;
+        if (!Pose) return;
 
-        let camera: MediaPipeCamera | null = null;
-        const videoEl = videoRef.current; // the same <video> for this effect's lifetime
+        // The pose model is created ONCE. Switching cameras only swaps the video stream
+        // (effect below): MediaPipe Pose often fails to start a second time on the same page.
         let isUnmounted = false;
         let frameCount = 0;
         let isPredicting = false;
@@ -741,50 +793,141 @@ function CameraContent() {
                 }
                 canvasCtx.restore();
             });
-
-            camera = new Camera(videoElement, {
-                onFrame: async () => {
-                    if (isUnmounted) return;
-                    if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
-                        try {
-                            if (!isMockVideoPlaying.current) {
-                                await poseWrapperRef.current?.send({ image: videoElement });
-                            }
-                        } catch (e) {
-                            console.error("Mediapipe Error onFrame", e);
-                        }
-                    }
-                },
-                width: 640,
-                height: 480,
-                facingMode: facingMode
-            });
-            cameraWrapperRef.current = camera;
-            camera.start();
         };
 
         initMediaPipe();
 
         return () => {
             isUnmounted = true;
-            if (cameraWrapperRef.current) {
-                cameraWrapperRef.current.stop();
-            }
             if (poseWrapperRef.current) {
                 poseWrapperRef.current.close();
+                poseWrapperRef.current = null;
             }
             isMockVideoPlaying.current = false;
             if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
                 mediaRecorderRef.current.stop();
             }
+        };
+    }, [areScriptsLoaded]);
 
-            if (videoEl && videoEl.srcObject) {
-                const stream = videoEl.srcObject as MediaStream;
-                stream.getTracks().forEach(t => t.stop());
-                videoEl.srcObject = null;
+    // ── Camera stream: (re)opened on start, on switch front/back and on retry ──
+    useEffect(() => {
+        if (!areScriptsLoaded) return;
+        const video = videoRef.current;
+        if (!video) return;
+        if (!navigator.mediaDevices?.getUserMedia) {
+            // Insecure page (http) or very old browser: no camera API at all.
+            Promise.resolve().then(() => {
+                setCameraError(true);
+                setIsSwitchingCamera(false);
+            });
+            return;
+        }
+
+        const { facing: want, isSwitch } = cameraRequest;
+        let cancelled = false;
+        let raf = 0;
+        let stream: MediaStream | null = null;
+
+        const open = async (constraints: MediaTrackConstraints): Promise<MediaStream | null> => {
+            try {
+                return await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: { width: { ideal: 640 }, height: { ideal: 480 }, ...constraints },
+                });
+            } catch (err) {
+                console.warn("Camera open failed:", constraints, err);
+                return null;
             }
         };
-    }, [areScriptsLoaded, facingMode]);
+        const listCameras = async (): Promise<MediaDeviceInfo[]> => {
+            try {
+                return (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+            } catch {
+                return [];
+            }
+        };
+        const idOf = (s: MediaStream | null) => s?.getVideoTracks()[0]?.getSettings().deviceId ?? null;
+        const stop = (s: MediaStream | null) => s?.getTracks().forEach((t) => t.stop());
+
+        const run = async () => {
+            if (cancelled) return;
+            const prevId = deviceIdRef.current;
+            // Phones can't open two cameras at once: fully release the old one first.
+            stop(video.srcObject as MediaStream | null);
+            video.srcObject = null;
+
+            let fromFacing = true; // false = picked by deviceId, so the requested facing proves nothing
+            let next: MediaStream | null = null;
+            if (isSwitch) {
+                // `ideal` alone often hands back the same camera — insist first.
+                next = await open({ facingMode: { exact: want } });
+                if (next && prevId && idOf(next) === prevId) { stop(next); next = null; }
+                if (!next) {
+                    const other = pickOtherCamera(await listCameras(), prevId, want);
+                    if (other) {
+                        next = await open({ deviceId: { exact: other } });
+                        fromFacing = false;
+                    }
+                }
+            }
+            if (!next) {
+                next = await open({ facingMode: { ideal: want } });
+                fromFacing = true;
+            }
+            if (cancelled) { stop(next); return; }
+
+            if (!next) {
+                setCameraError(true);
+                setIsSwitchingCamera(false);
+                return;
+            }
+            stream = next;
+            const track = stream.getVideoTracks()[0];
+            const nowId = idOf(stream);
+            const switched = !isSwitch || !prevId || nowId !== prevId;
+            deviceIdRef.current = nowId;
+
+            isMockVideoPlaying.current = false;
+            video.removeAttribute("src");
+            video.srcObject = stream;
+            await video.play().catch(() => { /* autoplay is allowed for muted video */ });
+
+            const facing = facingOfTrack(track) ?? (fromFacing && switched ? want : "user");
+            setActualFacing(facing);
+            setIsSwitchingCamera(false);
+            if (isSwitch) {
+                const s = tRef.current.camera.setup;
+                if (switched) showCameraNotice(facing === "environment" ? s.backCamera : s.frontCamera, false);
+                else showCameraNotice(s.switchFailed, true);
+            }
+            const cams = await listCameras();
+            if (!cancelled && cams.length > 0) setCameraCount(cams.length);
+
+            // Feed frames to the pose model one at a time.
+            const loop = async () => {
+                if (cancelled) return;
+                if (!isMockVideoPlaying.current && video.videoWidth > 0 && poseWrapperRef.current) {
+                    try {
+                        await poseWrapperRef.current.send({ image: video });
+                    } catch (e) {
+                        console.error("Mediapipe Error onFrame", e);
+                    }
+                }
+                if (!cancelled) raf = requestAnimationFrame(loop);
+            };
+            raf = requestAnimationFrame(loop);
+        };
+        const queued = cameraQueueRef.current.then(run);
+        cameraQueueRef.current = queued.catch(() => { /* logged in open() */ });
+
+        return () => {
+            cancelled = true;
+            cancelAnimationFrame(raf);
+            stop(stream);
+            if (stream && video.srcObject === stream) video.srcObject = null;
+        };
+    }, [areScriptsLoaded, cameraRequest]);
 
     const endWorkoutData = async () => {
         // Both the HUD and the "complete" overlay can end a session — only save once.
@@ -855,9 +998,52 @@ function CameraContent() {
         }
     };
 
+    const setup = t.camera.setup;
+    const mirrored = actualFacing !== "environment";
+    const exercises: { id: ExerciseId; icon: string }[] = [
+        { id: "benchpress", icon: "fitness_center" },
+        { id: "squat", icon: "accessibility_new" },
+        { id: "deadlift", icon: "sports_gymnastics" },
+    ];
+    const readiness = [
+        { label: setup.statusCamera, ready: !isSwitchingCamera && !cameraError && areScriptsLoaded },
+        { label: setup.statusPose, ready: isModelReady },
+        { label: setup.statusServer, ready: isBackendReady },
+    ];
+    // Unknown camera count (before permission): offer the switch on phones only.
+    const canSwitch = cameraCount > 1 || cameraCount === 0;
+    const status = cameraError
+        ? { text: setup.cameraErrorTitle, dot: "bg-orange-400", pulse: false }
+        : isTrackingStarted
+            ? { text: `${t.camera.live} · ${setup.statusLive}`, dot: "bg-red-500", pulse: true }
+            : isModelReady
+                ? { text: setup.statusReady, dot: "bg-primary", pulse: false }
+                : { text: setup.statusPreparing, dot: "bg-amber-400", pulse: true };
+    const restProgress = restLeft !== null ? restLeft / restSeconds : 0;
+    const lastSet = setsRef.current.length > 0 ? setsRef.current[setsRef.current.length - 1] : null;
+
+    const startButton = (compact: boolean) => (
+        <button
+            type="button"
+            onClick={startWorkoutCountdown}
+            disabled={!isModelReady}
+            className={`${compact ? "h-12 flex-1 px-4 text-sm" : "h-14 w-full text-base"} rounded-2xl font-semibold flex items-center justify-center gap-2 transition touch-manipulation ${
+                isModelReady
+                    ? "bg-primary text-background-dark hover:brightness-110 active:scale-[0.98] cursor-pointer"
+                    : "bg-white/[0.06] text-slate-400 cursor-not-allowed"
+            }`}
+        >
+            {isModelReady ? (
+                <span className="material-symbols-outlined text-2xl filled" aria-hidden="true">play_arrow</span>
+            ) : (
+                <span className="size-4 rounded-full border-2 border-white/20 border-t-slate-300 animate-spin" aria-hidden="true" />
+            )}
+            {isModelReady ? setup.start : setup.preparing}
+        </button>
+    );
+
     return (
-        <div className="bg-black font-display text-white h-screen flex flex-col overflow-hidden">
-            <Script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" strategy="lazyOnload" />
+        <div className="bg-black text-white h-[100dvh] flex flex-col overflow-hidden">
             <Script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" strategy="lazyOnload" />
             <Script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" strategy="lazyOnload"
                 onLoad={() => { setTimeout(() => setAreScriptsLoaded(true), 500); }}
@@ -865,347 +1051,239 @@ function CameraContent() {
 
             <div className="flex flex-col lg:flex-row flex-1 h-full overflow-hidden">
                 {/* ── Camera View ── */}
-                <div className="relative flex-1 flex flex-col min-h-0">
+                <div className="relative flex-1 flex flex-col min-h-0 bg-black">
                     <video ref={videoRef} autoPlay playsInline muted
-                        className="absolute inset-0 z-0 w-full h-full object-cover"
-                        style={{ filter: "brightness(0.6) contrast(1.1)", transform: facingMode === "user" ? "scaleX(-1)" : "scaleX(1)" }}
+                        className={`absolute inset-0 z-0 w-full h-full object-cover transition-opacity duration-300 ${isSwitchingCamera ? "opacity-0" : "opacity-100"}`}
+                        style={{ transform: mirrored ? "scaleX(-1)" : undefined }}
                     />
                     <canvas ref={canvasRef}
-                        className="absolute inset-0 z-10 w-full h-full object-cover pointer-events-none"
-                        style={{ transform: facingMode === "user" ? "scaleX(-1)" : "scaleX(1)" }}
+                        className={`absolute inset-0 z-10 w-full h-full object-cover pointer-events-none transition-opacity duration-300 ${isSwitchingCamera ? "opacity-0" : "opacity-100"}`}
+                        style={{ transform: mirrored ? "scaleX(-1)" : undefined }}
                     />
+                    {/* Scrims keep the controls readable on any background */}
+                    <div className="absolute inset-x-0 top-0 z-20 h-32 bg-gradient-to-b from-black/70 to-transparent pointer-events-none" aria-hidden="true" />
 
                     {/* Debug Display — dev only */}
                     {process.env.NODE_ENV === "development" && (
-                    <div ref={debugAngleRef} className="absolute bottom-48 left-4 z-50 bg-black/70 text-primary font-mono p-2 rounded text-sm pointer-events-none border border-primary/30">
-                        Angle: 0 | State: up
-                    </div>
+                        <div ref={debugAngleRef} className="absolute bottom-48 left-4 z-50 bg-black/70 text-primary font-mono p-2 rounded text-sm pointer-events-none border border-primary/30">
+                            Angle: 0 | State: up
+                        </div>
                     )}
 
-                    {/* Top Bar */}
-                    <header className="relative z-30 flex items-center justify-between p-3 md:p-4">
-                        <Link href="/" className="flex items-center gap-1.5 text-white/80 hover:text-white bg-black/30 backdrop-blur-md px-3 py-2 rounded-full border border-white/10 transition-colors">
-                            <span className="material-symbols-outlined text-lg">arrow_back_ios_new</span>
-                            <span className="text-sm font-semibold hidden sm:block">{t.camera.back}</span>
+                    {/* ── Top bar ── */}
+                    <header className="relative z-30 flex items-center gap-3 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2 md:px-4">
+                        <Link href="/" aria-label={t.camera.back}
+                            className="size-11 shrink-0 rounded-full bg-black/50 backdrop-blur-md border border-white/15 flex items-center justify-center text-white hover:bg-black/70 transition-colors">
+                            <span className="material-symbols-outlined text-xl" aria-hidden="true">arrow_back</span>
                         </Link>
-                        <div className="flex items-center gap-2">
-                            <button type="button" aria-label={language === "th" ? "สลับกล้องหน้า/หลัง" : "Switch camera"} onClick={() => setFacingMode(p => p === "user" ? "environment" : "user")}
-                                className="lg:hidden flex items-center justify-center w-10 h-10 bg-black/30 backdrop-blur-md rounded-full border border-white/10 text-white/80 active:scale-95 transition-all">
-                                <span className="material-symbols-outlined text-lg">flip_camera_ios</span>
-                            </button>
-                            {isTrackingStarted && (
-                                <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-black/40 backdrop-blur-md rounded-full border border-white/10 text-xs font-bold text-white/80 tracking-wider">
-                                    <span className="material-symbols-outlined text-primary text-sm">smart_toy</span>{t.camera.aiActive}
-                                </div>
-                            )}
-                            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold tracking-wider ${isModelReady ? "bg-red-600/80 text-white" : "bg-orange-500/80 text-white"}`}>
-                                <div className={`w-1.5 h-1.5 rounded-full bg-white ${isModelReady ? "animate-pulse" : ""}`}></div>
-                                {isModelReady ? t.camera.live : t.camera.loading}
-                            </div>
+                        <div className="min-w-0 flex-1">
+                            <p className="text-base font-semibold leading-tight truncate drop-shadow">{exerciseName}</p>
+                            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-200" aria-live="polite">
+                                <span className={`size-2 rounded-full ${status.dot} ${status.pulse ? "animate-pulse" : ""}`} aria-hidden="true" />
+                                {status.text}
+                            </p>
                         </div>
+                        {canSwitch && !cameraError && (
+                            <button type="button" onClick={switchCamera} disabled={isSwitchingCamera}
+                                aria-label={`${setup.switchCamera} (${actualFacing === "environment" ? setup.backCamera : setup.frontCamera})`}
+                                title={setup.switchCamera}
+                                className={`h-11 shrink-0 rounded-full bg-black/50 backdrop-blur-md border border-white/15 pl-2.5 pr-3.5 flex items-center gap-1.5 text-white hover:bg-black/70 hover:border-white/30 active:scale-95 transition disabled:cursor-wait touch-manipulation cursor-pointer ${cameraCount === 0 ? "lg:hidden" : ""}`}>
+                                <span className="size-7 rounded-full bg-primary/15 text-primary flex items-center justify-center" aria-hidden="true">
+                                    <span className="material-symbols-outlined text-lg transition-transform duration-500 ease-out"
+                                        style={{ transform: `rotate(${cameraRequest.n * 180}deg)` }}>
+                                        cameraswitch
+                                    </span>
+                                </span>
+                                <span className="text-sm font-medium tabular-nums" aria-hidden="true">
+                                    {actualFacing === "environment" ? setup.backShort : setup.frontShort}
+                                </span>
+                            </button>
+                        )}
                     </header>
 
-                    {/* ── Warmup Overlay ── */}
+                    {/* Switching / camera error */}
+                    {isSwitchingCamera && areScriptsLoaded && !cameraError && (
+                        <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+                            <p role="status" className="rounded-full bg-black/70 backdrop-blur px-4 py-2 text-sm text-slate-100 flex items-center gap-2">
+                                <span className="size-4 rounded-full border-2 border-white/20 border-t-primary animate-spin" aria-hidden="true" />
+                                {setup.switching}
+                            </p>
+                        </div>
+                    )}
+                    {cameraNotice && !isSwitchingCamera && !cameraError && (
+                        <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none px-6">
+                            <p key={cameraNotice.text} role="status"
+                                className="animate-pop rounded-full bg-black/70 backdrop-blur border border-white/10 px-4 py-2 text-sm text-slate-100 flex items-center gap-2 text-center">
+                                <span className={`material-symbols-outlined text-lg ${cameraNotice.failed ? "text-orange-300" : "text-primary filled"}`} aria-hidden="true">
+                                    {cameraNotice.failed ? "no_photography" : "check_circle"}
+                                </span>
+                                {cameraNotice.text}
+                            </p>
+                        </div>
+                    )}
+                    {cameraError && !isTrackingStarted && (
+                        <div className="absolute inset-x-0 top-24 z-30 px-4">
+                            <div role="alert" className="mx-auto max-w-md rounded-3xl bg-surface-dark/95 backdrop-blur border border-white/10 p-5 flex gap-4">
+                                <span className="material-symbols-outlined text-3xl text-orange-300 shrink-0" aria-hidden="true">videocam_off</span>
+                                <div className="min-w-0">
+                                    <p className="font-semibold text-white">{setup.cameraErrorTitle}</p>
+                                    <p className="mt-1 text-sm text-slate-300">{setup.cameraErrorBody}</p>
+                                    <button type="button" onClick={retryCamera}
+                                        className="mt-3 h-11 px-4 rounded-xl border border-white/20 text-white text-sm font-semibold hover:bg-white/5 cursor-pointer">
+                                        {setup.retry}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── Before the workout: countdown + setup sheet ── */}
                     {!isTrackingStarted && (
-                        <div className="absolute inset-0 z-40 flex flex-col">
-                            {/* Countdown overlay */}
+                        <>
                             {countdown !== null && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-50">
-                                    <div className="text-8xl md:text-9xl font-black text-primary drop- ">{countdown}</div>
+                                <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-black/60" role="timer" aria-live="assertive">
+                                    <div className="size-44 md:size-52 rounded-full border-4 border-primary/40 bg-black/40 flex items-center justify-center">
+                                        <span key={countdown} className="animate-pop text-8xl md:text-9xl font-bold text-primary tabular-nums leading-none">{countdown}</span>
+                                    </div>
+                                    <p className="text-lg text-slate-200">{setup.getReady}</p>
                                 </div>
                             )}
 
-                            {/* Main warmup card */}
                             {countdown === null && (
-                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent pt-6 pb-4 md:pb-6 px-3 md:px-4 z-40">
-                                    {isSetupMinimized ? (
-                                        /* Collapsed View: Floating Mini Action Bar for 100% Full Camera Framing */
-                                        <div className="max-w-md mx-auto flex items-center justify-between gap-2 bg-[#0a100b]/80 backdrop-blur-xl border border-primary/30 rounded-2xl p-2.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                                            <button
-                                                type="button"
-                                                onClick={() => setIsSetupMinimized(false)}
-                                                className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold transition-all cursor-pointer active:scale-95 shrink-0 touch-manipulation"
-                                            >
-                                                <span className="material-symbols-outlined text-base text-primary">tune</span>
-                                                <span className="truncate max-w-[130px]">{exerciseName} ({repGoal})</span>
-                                                <span className="material-symbols-outlined text-sm text-slate-400">expand_less</span>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={startWorkoutCountdown}
-                                                disabled={!isModelReady}
-                                                className={`flex-1 py-2.5 px-4 rounded-xl text-xs md:text-sm font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 touch-manipulation ${
-                                                    isModelReady
-                                                        ? "bg-primary text-black hover:bg-primary/90"
-                                                        : "bg-white/10 text-slate-400 cursor-not-allowed"
-                                                }`}
-                                            >
-                                                <span className="material-symbols-outlined text-lg font-bold">play_arrow</span>
-                                                <span>{language === "th" ? "เริ่มออกกำลังกาย" : "START"}</span>
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        /* Expanded View */
-                                        <div className="max-w-md mx-auto flex flex-col gap-2.5 md:gap-3.5 bg-[#0a100b]/80 backdrop-blur-xl border border-primary/25 rounded-3xl p-3.5 md:p-5 relative overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
-
-                                            {/* Header: Title + Minimize Button */}
-                                            <div className="flex items-center justify-between pb-1 border-b border-white/5">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="size-7 md:size-8 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary">
-                                                        <span className="material-symbols-outlined text-base md:text-lg font-bold">tune</span>
-                                                    </div>
-                                                    <div>
-                                                        <h3 className="text-white font-black text-xs md:text-sm tracking-tight leading-none">
-                                                            {language === "th" ? "ตั้งค่าก่อนเริ่มฝึก" : "Workout Setup"}
-                                                        </h3>
-                                                        <span className="text-xs text-slate-400 font-medium">
-                                                            {language === "th" ? "เลือกท่าและเป้าหมาย" : "Configure exercise & target"}
-                                                        </span>
-                                                    </div>
-                                                </div>
-
-                                                {/* Minimize to preview full camera */}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setIsSetupMinimized(true)}
-                                                    className="flex items-center gap-1 min-h-10 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white text-xs font-bold transition-all cursor-pointer active:scale-95 touch-manipulation"
-                                                    title={language === "th" ? "ซ่อนการ์ดเพื่อดูมุมกล้องเต็มจอ" : "Minimize to check full camera"}
-                                                >
-                                                    <span className="material-symbols-outlined text-sm text-primary">visibility</span>
-                                                    <span>{language === "th" ? "ดูกล้องเต็มจอ" : "Full View"}</span>
-                                                    <span className="material-symbols-outlined text-xs">expand_more</span>
-                                                </button>
-                                            </div>
-
-                                            {/* ── 3-Point System Telemetry Status Bar ── */}
-                                            <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-black/40 border border-white/10 text-xs md:text-sm font-semibold">
-                                                {/* 1. Camera */}
-                                                <div className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-xl border transition-all ${
-                                                    areScriptsLoaded 
-                                                        ? "bg-primary/10 border-primary/30 text-primary" 
-                                                        : "bg-white/5 border-white/5 text-slate-400"
-                                                }`}>
-                                                    <span className={`size-1.5 rounded-full shrink-0 ${areScriptsLoaded ? "bg-primary" : "bg-slate-500 animate-pulse"}`} />
-                                                    <span className="material-symbols-outlined text-xs shrink-0">{areScriptsLoaded ? "check_circle" : "videocam"}</span>
-                                                    <span className="truncate">{language === "th" ? "กล้อง" : "Camera"}{areScriptsLoaded ? "" : "…"}</span>
-                                                </div>
-
-                                                {/* 2. Pose AI */}
-                                                <div className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-xl border transition-all ${
-                                                    isModelReady 
-                                                        ? "bg-primary/10 border-primary/30 text-primary" 
-                                                        : "bg-white/5 border-white/5 text-slate-400"
-                                                }`}>
-                                                    <span className={`size-1.5 rounded-full shrink-0 ${isModelReady ? "bg-primary" : "bg-slate-500 animate-pulse"}`} />
-                                                    <span className="material-symbols-outlined text-xs shrink-0">{isModelReady ? "check_circle" : "psychology"}</span>
-                                                    <span className="truncate">{language === "th" ? "ตรวจจับท่า" : "Pose AI"}{isModelReady ? "" : "…"}</span>
-                                                </div>
-
-                                                {/* 3. AI Server */}
-                                                <div className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-xl border transition-all ${
-                                                    isBackendReady 
-                                                        ? "bg-primary/10 border-primary/30 text-primary" 
-                                                        : backendStatus === "waking"
-                                                            ? "bg-amber-500/10 border-amber-500/30 text-amber-300"
-                                                            : "bg-white/5 border-white/5 text-slate-400"
-                                                }`}>
-                                                    <span className={`size-1.5 rounded-full shrink-0 ${isBackendReady ? "bg-primary" : "bg-amber-400 animate-pulse"}`} />
-                                                    <span className="material-symbols-outlined text-xs shrink-0">{isBackendReady ? "check_circle" : "cloud_sync"}</span>
-                                                    <span className="truncate">
-                                                        {language === "th" ? "เซิร์ฟเวอร์" : "Server"}{isBackendReady ? "" : "…"}
-                                                    </span>
-                                                </div>
-                                            </div>
-
-                                            {/* Subtle server connecting status message if not ready */}
-                                            {!isBackendReady && (
-                                                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200/90 text-xs md:text-sm leading-tight">
-                                                    <span className="material-symbols-outlined text-xs text-amber-400 shrink-0">info</span>
-                                                    <span className="truncate">
-                                                        {language === "th" 
-                                                            ? "คลาวด์ AI กำลังเชื่อมต่อ (สามารถเริ่มฝึกและนับรอบได้ทันที)" 
-                                                            : "Cloud AI connecting (live pose tracking is ready to start)"}
-                                                    </span>
-                                                </div>
-                                            )}
-
-                                            {/* Exercise Selector: 3 Segmented Interactive Cards */}
-                                            <div className="flex flex-col gap-1">
-                                                <label className="text-slate-400 text-xs md:text-sm uppercase tracking-wider font-bold">
-                                                    {t.camera.warmup.exerciseLabel}
-                                                </label>
-                                                <div className="grid grid-cols-3 gap-1.5 md:gap-2.5">
-                                                    {[
-                                                        { 
-                                                            id: "benchpress", 
-                                                            name: t.camera.exerciseName.benchpress, 
-                                                            icon: "fitness_center", 
-                                                            focus: language === "th" ? "อก • หลังแขน" : "Chest & Arms" 
-                                                        },
-                                                        { 
-                                                            id: "squat", 
-                                                            name: t.camera.exerciseName.squat, 
-                                                            icon: "accessibility_new", 
-                                                            focus: language === "th" ? "ต้นขา • สะโพก" : "Quads & Glutes" 
-                                                        },
-                                                        { 
-                                                            id: "deadlift", 
-                                                            name: t.camera.exerciseName.deadlift, 
-                                                            icon: "sports_gymnastics", 
-                                                            focus: language === "th" ? "หลัง • แฮมสตริง" : "Back & Core" 
-                                                        },
-                                                    ].map((item) => {
-                                                        const isSelected = currentExercise === item.id;
-                                                        return (
-                                                            <button
-                                                                key={item.id}
-                                                                type="button"
-                                                                onClick={() => setCurrentExercise(item.id as ExerciseId)}
-                                                                className={`flex flex-col items-center justify-center p-2 md:p-3 rounded-2xl border transition-all text-center group cursor-pointer relative touch-manipulation ${
-                                                                    isSelected
-                                                                        ? "bg-primary/15 border-primary text-white ring-1 ring-primary/40"
-                                                                        : "bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/[0.08] text-slate-300 active:scale-95"
-                                                                }`}
-                                                            >
-                                                                {isSelected && (
-                                                                    <div className="absolute top-1.5 right-1.5 size-1.5 md:size-2 rounded-full bg-primary" />
-                                                                )}
-                                                                <div className={`size-8 md:size-10 rounded-xl flex items-center justify-center mb-1 transition-transform group-hover:scale-110 ${
-                                                                    isSelected ? "bg-primary/20 text-primary" : "bg-white/5 text-slate-400 group-hover:text-white"
-                                                                }`}>
-                                                                <span className="material-symbols-outlined text-xl md:text-2xl">{item.icon}</span>
-                                                            </div>
-                                                            <span className={`text-sm font-black tracking-tight leading-tight ${isSelected ? "text-white" : "text-slate-200"}`}>
-                                                                {item.name}
-                                                            </span>
-                                                            <span className={`text-xs mt-0.5 font-medium leading-none ${isSelected ? "text-primary/90" : "text-slate-400"}`}>
-                                                                {item.focus}
-                                                            </span>
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-
-                                        {/* Goal Reps Selector with Presets & Stepper */}
-                                        <div className="flex flex-wrap items-center justify-between gap-2 p-2 md:p-2.5 rounded-2xl bg-white/[0.03] border border-white/10">
-                                            <div className="flex items-center gap-1.5 md:gap-2">
-                                                <div className="size-7 md:size-8 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
-                                                    <span className="material-symbols-outlined text-sm md:text-base">flag</span>
-                                                </div>
-                                                <div>
-                                                    <div className="text-white text-sm font-bold leading-tight">
-                                                        {language === "th" ? "เป้าหมาย" : "Target Reps"}
-                                                    </div>
-                                                    <div className="text-slate-400 text-xs hidden sm:block">
-                                                        {language === "th" ? "นับรอบและวิเคราะห์ทุกครั้ง" : "AI counts reps & tracks tempo"}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="flex flex-wrap items-center gap-1 md:gap-2 ml-auto">
-                                                {/* Preset Pills */}
-                                                <div className="flex items-center gap-1">
-                                                    {[8, 10, 12, 15].map((preset) => (
-                                                        <button
-                                                            key={preset}
-                                                            type="button"
-                                                            onClick={() => setRepGoal(preset)}
-                                                            className={`min-w-10 h-10 px-2 rounded-lg text-sm font-bold transition-all cursor-pointer touch-manipulation ${
-                                                                repGoal === preset
-                                                                    ? "bg-primary text-black font-black"
-                                                                    : "bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
-                                                            }`}
-                                                        >
-                                                            {preset}
-                                                        </button>
-                                                    ))}
-                                                </div>
-
-                                                {/* Stepper */}
-                                                <div className="flex items-center bg-black/40 border border-white/15 rounded-xl px-1 py-0.5 ml-0.5">
-                                                    <button 
-                                                        type="button"
-                                                        onClick={() => setRepGoal(r => Math.max(1, r - 1))} 
-                                                        className="text-slate-300 hover:text-white w-10 h-10 flex items-center justify-center text-base font-bold rounded-lg hover:bg-white/10 active:scale-90 transition-all cursor-pointer touch-manipulation"
-                                                    >
-                                                        −
-                                                    </button>
-                                                    <span className="text-primary font-black text-sm md:text-base w-8 text-center font-mono">
-                                                        {repGoal}
-                                                    </span>
-                                                    <button 
-                                                        type="button"
-                                                        onClick={() => setRepGoal(r => Math.min(50, r + 1))} 
-                                                        className="text-slate-300 hover:text-white w-10 h-10 flex items-center justify-center text-base font-bold rounded-lg hover:bg-white/10 active:scale-90 transition-all cursor-pointer touch-manipulation"
-                                                    >
-                                                        +
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Main Action Button */}
-                                        <button
-                                            type="button"
-                                            onClick={startWorkoutCountdown}
-                                            disabled={!isModelReady}
-                                            className={`w-full py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-semibold shadow-xl transition-all flex items-center justify-center gap-2 touch-manipulation ${
-                                                isModelReady
-                                                    ? "bg-primary text-black hover:scale-[1.01] active:scale-[0.98] cursor-pointer"
-                                                    : "bg-white/5 border border-white/10 text-slate-400 cursor-not-allowed"
-                                            }`}
-                                        >
-                                            <span className="material-symbols-outlined text-xl md:text-2xl font-bold">
-                                                {isModelReady ? "play_arrow" : "hourglass_top"}
-                                            </span>
-                                            <span>
-                                                {isModelReady
-                                                    ? (language === "th" ? "เริ่มออกกำลังกาย" : t.camera.warmup.startAnalysis)
-                                                    : (language === "th" ? "กำลังเตรียมระบบกล้อง AI..." : t.camera.warmup.loadingPose)}
-                                            </span>
+                                <div className="absolute inset-x-0 bottom-0 z-40 md:px-4 md:pb-6">
+                                    <section aria-label={setup.title}
+                                        className="mx-auto w-full md:max-w-md rounded-t-3xl md:rounded-3xl bg-surface-dark/95 backdrop-blur-xl border border-white/10 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:pb-5 shadow-2xl">
+                                        <button type="button" onClick={() => setIsSetupMinimized(!isSetupMinimized)}
+                                            aria-expanded={!isSetupMinimized} aria-label={isSetupMinimized ? setup.expand : setup.collapse}
+                                            className="w-full h-7 flex items-center justify-center cursor-pointer touch-manipulation">
+                                            <span className="h-1.5 w-10 rounded-full bg-white/25" aria-hidden="true" />
                                         </button>
 
-                                        {/* Video Upload Fallback */}
-                                        <label className={`w-full min-h-11 py-2 rounded-xl text-sm font-semibold tracking-wider transition-all flex items-center justify-center gap-2 border touch-manipulation ${
-                                            isModelReady 
-                                                ? "border-white/10 bg-white/5 text-slate-300 hover:text-white hover:bg-white/10 hover:border-white/20 active:scale-98 cursor-pointer" 
-                                                : "border-white/10 text-slate-400 opacity-60 pointer-events-none"
-                                        }`}>
-                                            <span className="material-symbols-outlined text-sm md:text-base text-primary">upload_file</span>
-                                            <span>{t.camera.warmup.uploadVideo}</span>
-                                            <input type="file" accept="video/*" className="hidden" onChange={handleVideoUpload} disabled={!isModelReady} />
-                                        </label>
-                                    </div>
-                                    )}
+                                        {isSetupMinimized ? (
+                                            <div className="flex items-center gap-2">
+                                                <button type="button" onClick={() => setIsSetupMinimized(false)}
+                                                    className="h-12 min-w-0 flex items-center gap-2 rounded-2xl bg-white/[0.06] border border-white/10 px-3 text-sm text-slate-100 cursor-pointer touch-manipulation">
+                                                    <span className="material-symbols-outlined text-lg text-primary shrink-0" aria-hidden="true">tune</span>
+                                                    <span className="truncate">{setup.summary.replace("{exercise}", exerciseName).replace("{reps}", String(repGoal))}</span>
+                                                </button>
+                                                {startButton(true)}
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-col gap-4">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <h2 className="text-lg font-semibold text-white">{setup.title}</h2>
+                                                    <Link href="/tutorial" className="min-h-11 inline-flex items-center gap-1 text-sm text-primary hover:underline underline-offset-4">
+                                                        <span className="material-symbols-outlined text-lg" aria-hidden="true">help</span>
+                                                        {setup.howToPlace}
+                                                    </Link>
+                                                </div>
+
+                                                {/* System readiness */}
+                                                <div>
+                                                    <ul className="flex flex-wrap gap-2">
+                                                        {readiness.map((r) => (
+                                                            <li key={r.label}
+                                                                className={`inline-flex items-center gap-1.5 h-8 rounded-full border px-3 text-xs font-medium ${r.ready ? "bg-primary/10 border-primary/30 text-primary" : "bg-white/[0.04] border-white/10 text-slate-300"}`}>
+                                                                {r.ready ? (
+                                                                    <span className="material-symbols-outlined text-base filled" aria-hidden="true">check_circle</span>
+                                                                ) : (
+                                                                    <span className="size-3 rounded-full border-2 border-white/20 border-t-slate-300 animate-spin" aria-hidden="true" />
+                                                                )}
+                                                                {r.label}
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                    {!isBackendReady && <p className="mt-2 text-xs text-slate-400">{setup.serverNote}</p>}
+                                                </div>
+
+                                                {/* Exercise */}
+                                                <fieldset>
+                                                    <legend className="text-sm font-medium text-slate-200 mb-2">{setup.exercise}</legend>
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        {exercises.map((item) => {
+                                                            const selected = currentExercise === item.id;
+                                                            return (
+                                                                <button key={item.id} type="button" aria-pressed={selected}
+                                                                    onClick={() => setCurrentExercise(item.id)}
+                                                                    className={`flex flex-col items-start gap-2 rounded-2xl border p-3 text-left transition-colors cursor-pointer touch-manipulation ${selected ? "bg-primary/10 border-primary" : "bg-white/[0.04] border-white/10 hover:border-white/25"}`}>
+                                                                    <span className={`size-9 rounded-xl flex items-center justify-center ${selected ? "bg-primary text-background-dark" : "bg-white/[0.06] text-slate-300"}`}>
+                                                                        <span className="material-symbols-outlined text-xl" aria-hidden="true">{item.icon}</span>
+                                                                    </span>
+                                                                    <span className="min-w-0">
+                                                                        <span className="block text-sm font-semibold text-white leading-tight">{getExerciseName(item.id)}</span>
+                                                                        <span className="block mt-0.5 text-xs text-slate-400 leading-tight">{setup.focus[item.id]}</span>
+                                                                    </span>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </fieldset>
+
+                                                {/* Reps */}
+                                                <div>
+                                                    <div className="flex items-baseline justify-between mb-2">
+                                                        <span className="text-sm font-medium text-slate-200">{setup.reps}</span>
+                                                        {setGoal > 1 && (
+                                                            <span className="text-xs text-slate-400">{setup.setsInfo.replace("{sets}", String(setGoal)).replace("{rest}", String(restSeconds))}</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <div className="flex gap-1.5">
+                                                            {[8, 10, 12, 15].map((preset) => (
+                                                                <button key={preset} type="button" onClick={() => setRepGoal(preset)} aria-pressed={repGoal === preset}
+                                                                    className={`h-11 min-w-11 px-2 rounded-xl text-sm font-semibold tabular-nums transition-colors cursor-pointer touch-manipulation ${repGoal === preset ? "bg-primary text-background-dark" : "bg-white/[0.06] text-slate-200 hover:bg-white/10"}`}>
+                                                                    {preset}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                        <div className="flex items-center h-11 rounded-xl border border-white/15">
+                                                            <button type="button" onClick={() => setRepGoal((r) => Math.max(1, r - 1))} aria-label={setup.decrease}
+                                                                className="size-11 flex items-center justify-center text-slate-200 hover:text-white cursor-pointer touch-manipulation">
+                                                                <span className="material-symbols-outlined text-xl" aria-hidden="true">remove</span>
+                                                            </button>
+                                                            <span className="w-8 text-center text-lg font-semibold text-white tabular-nums" aria-live="polite">{repGoal}</span>
+                                                            <button type="button" onClick={() => setRepGoal((r) => Math.min(50, r + 1))} aria-label={setup.increase}
+                                                                className="size-11 flex items-center justify-center text-slate-200 hover:text-white cursor-pointer touch-manipulation">
+                                                                <span className="material-symbols-outlined text-xl" aria-hidden="true">add</span>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex flex-col items-center gap-1">
+                                                    {startButton(false)}
+                                                    <label className={`min-h-11 inline-flex items-center gap-1.5 px-2 text-sm transition-colors touch-manipulation ${isModelReady ? "text-slate-300 hover:text-white cursor-pointer" : "text-slate-500 pointer-events-none"}`}>
+                                                        <span className="material-symbols-outlined text-lg" aria-hidden="true">upload_file</span>
+                                                        {t.camera.warmup.uploadVideo}
+                                                        <input type="file" accept="video/*" className="sr-only" onChange={handleVideoUpload} disabled={!isModelReady} />
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </section>
                                 </div>
                             )}
-                        </div>
+                        </>
                     )}
 
                     {/* ── Workout Complete Overlay ── */}
                     {isTrackingStarted && currentReps >= repGoal && repGoal > 0 && currentSet >= setGoal && restLeft === null && (
                         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                            <div className="bg-[#111] border border-white/10 p-8 rounded-3xl max-w-sm w-full text-center flex items-center flex-col animate-in fade-in zoom-in duration-300">
-                                <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center mb-5 border border-primary/30">
-                                    <span className="material-symbols-outlined text-primary text-5xl">task_alt</span>
+                            <div className="w-full max-w-sm rounded-3xl bg-surface-dark border border-white/10 p-6 text-center flex flex-col items-center animate-pop">
+                                <div className="size-20 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center mb-4">
+                                    <span className="material-symbols-outlined text-primary text-5xl" aria-hidden="true">task_alt</span>
                                 </div>
-                                <h2 className="text-3xl font-bold text-white mb-2">{t.motivation.goalHit.replace("{n}", String(repGoal))}</h2>
-                                <p className="text-white/60 text-sm mb-8 leading-relaxed">
-                                    {t.camera.workoutComplete.subtitle1} <strong>{repGoal}</strong> {t.camera.reps.toLowerCase()} {t.camera.workoutComplete.subtitle2} <strong>{exerciseName}</strong>.
+                                <h2 className="text-2xl font-semibold text-white">{t.motivation.goalHit.replace("{n}", String(repGoal))}</h2>
+                                <p className="mt-2 text-sm text-slate-300 leading-relaxed">
+                                    {t.camera.workoutComplete.subtitle1} <strong className="text-white">{repGoal}</strong> {t.camera.reps.toLowerCase()} {t.camera.workoutComplete.subtitle2} <strong className="text-white">{exerciseName}</strong>
                                 </p>
-                                
                                 <Link href="/summary" onClick={endWorkoutData}
-                                    className="w-full py-4 bg-primary text-black font-semibold rounded-2xl flex items-center justify-center gap-2 hover:scale-105 active:scale-95 transition-all">
-                                    <span className="material-symbols-outlined text-xl">analytics</span>
+                                    className="mt-6 w-full h-14 rounded-2xl bg-primary text-background-dark font-semibold flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.98] transition">
+                                    <span className="material-symbols-outlined text-xl" aria-hidden="true">analytics</span>
                                     {t.camera.workoutComplete.viewSummary}
                                 </Link>
-                                
-                                <button 
-                                    type="button"
-                                    onClick={() => setRepGoal(prev => prev + 5)}
-                                    className="mt-4 text-white/40 text-xs font-bold uppercase tracking-wider hover:text-white transition-colors py-2">
+                                <button type="button" onClick={() => setRepGoal((prev) => prev + 5)}
+                                    className="mt-2 min-h-11 px-3 text-sm text-slate-300 hover:text-white cursor-pointer">
                                     {t.camera.workoutComplete.continue}
                                 </button>
                             </div>
@@ -1214,21 +1292,35 @@ function CameraContent() {
 
                     {/* ── Rest between sets ── */}
                     {restLeft !== null && (
-                        <div role="timer" aria-live="polite" className="absolute inset-0 z-50 flex items-center justify-center bg-black/85 p-6">
-                            <div className="max-w-sm w-full text-center flex flex-col items-center gap-4">
-                                <p className="text-lg text-slate-300">{t.sets.resting} · {t.sets.setOf.replace("{n}", String(currentSet)).replace("{total}", String(setGoal))} ✓</p>
-                                <p className="text-sm text-slate-400">{t.sets.nextIn.replace("{n}", String(currentSet + 1))}</p>
-                                <p className="text-8xl font-bold text-white tabular-nums leading-none">{restLeft}</p>
-                                <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
-                                    <div className="h-full bg-primary transition-all duration-1000 ease-linear" style={{ width: `${(restLeft / restSeconds) * 100}%` }} />
+                        <div role="timer" aria-live="polite" className="absolute inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-6">
+                            <div className="w-full max-w-sm flex flex-col items-center gap-5 text-center">
+                                <div>
+                                    <p className="text-sm text-primary font-medium">
+                                        {t.sets.setOf.replace("{n}", String(currentSet)).replace("{total}", String(setGoal))} ✓
+                                    </p>
+                                    <h2 className="mt-1 text-2xl font-semibold text-white">{setup.restTitle}</h2>
                                 </div>
-                                {setsRef.current.length > 0 && (
-                                    <p className="text-sm text-slate-300">
-                                        {t.sets.set} {setsRef.current[setsRef.current.length - 1].set}: {setsRef.current[setsRef.current.length - 1].reps} {t.sets.reps}
-                                        {setsRef.current[setsRef.current.length - 1].avgScore !== null && ` · ${t.sets.score} ${setsRef.current[setsRef.current.length - 1].avgScore}%`}
+                                <div className="relative size-52">
+                                    <svg viewBox="0 0 200 200" className="size-full -rotate-90" aria-hidden="true">
+                                        <circle cx="100" cy="100" r="90" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="10" />
+                                        <circle cx="100" cy="100" r="90" fill="none" stroke="#39FF14" strokeWidth="10" strokeLinecap="round"
+                                            strokeDasharray={2 * Math.PI * 90} strokeDashoffset={2 * Math.PI * 90 * (1 - restProgress)}
+                                            className="transition-[stroke-dashoffset] duration-1000 ease-linear" />
+                                    </svg>
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                        <span className="text-7xl font-bold text-white tabular-nums leading-none">{restLeft}</span>
+                                        <span className="mt-1 text-sm text-slate-400">{setup.secondsLeft}</span>
+                                    </div>
+                                </div>
+                                <p className="text-sm text-slate-300">{t.sets.nextIn.replace("{n}", String(currentSet + 1))}</p>
+                                {lastSet && (
+                                    <p className="rounded-2xl bg-surface-dark border border-white/10 px-4 py-2.5 text-sm text-slate-200">
+                                        {t.sets.set} {lastSet.set}: <strong className="text-white">{lastSet.reps}</strong> {t.sets.reps}
+                                        {lastSet.avgScore !== null && <> · {t.sets.score} <strong className="text-white">{lastSet.avgScore}%</strong></>}
                                     </p>
                                 )}
-                                <button type="button" onClick={startNextSet} className="mt-2 h-14 w-full rounded-2xl bg-primary text-background-dark font-semibold text-lg cursor-pointer">
+                                <button type="button" onClick={startNextSet}
+                                    className="h-14 w-full rounded-2xl bg-primary text-background-dark font-semibold text-base hover:brightness-110 active:scale-[0.98] transition cursor-pointer">
                                     {t.sets.skipRest}
                                 </button>
                             </div>
@@ -1236,7 +1328,7 @@ function CameraContent() {
                     )}
 
                     <CameraMobileHUD props={{
-                        t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, 
+                        t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail,
                         currentReps, repGoal, exerciseName, endWorkoutData, riskLevel,
                         issue: topIssue ? describeIssue(topIssue, t.body) : null,
                         setLabel: setGoal > 1 ? t.sets.setOf.replace("{n}", String(currentSet)).replace("{total}", String(setGoal)) : null,
@@ -1246,13 +1338,13 @@ function CameraContent() {
                 </div>
 
                 <CameraDesktopPanel props={{
-                        t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, 
-                        currentReps, repGoal, exerciseName, endWorkoutData, riskLevel,
-                        issue: topIssue ? describeIssue(topIssue, t.body) : null,
-                        setLabel: setGoal > 1 ? t.sets.setOf.replace("{n}", String(currentSet)).replace("{total}", String(setGoal)) : null,
-                        missionFocus: missionFocus ? t.missions.focus.replace("{cue}", missionFocus.label) : null,
-                        ghost: { available: hasGhost, on: showGhost, toggle: toggleGhost },
-                    }} />
+                    t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail,
+                    currentReps, repGoal, exerciseName, endWorkoutData, riskLevel,
+                    issue: topIssue ? describeIssue(topIssue, t.body) : null,
+                    setLabel: setGoal > 1 ? t.sets.setOf.replace("{n}", String(currentSet)).replace("{total}", String(setGoal)) : null,
+                    missionFocus: missionFocus ? t.missions.focus.replace("{cue}", missionFocus.label) : null,
+                    ghost: { available: hasGhost, on: showGhost, toggle: toggleGhost },
+                }} />
             </div>
         </div>
     );

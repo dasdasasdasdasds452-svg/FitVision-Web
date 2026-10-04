@@ -46,9 +46,9 @@ function GhostToggle({ t, ghost, className }: { t: Dict; ghost: NonNullable<Came
             aria-checked={ghost.on}
             aria-label={t.ghost.toggle}
             onClick={ghost.toggle}
-            className={`${className} inline-flex items-center gap-2 rounded-full border font-semibold transition-colors cursor-pointer ${ghost.on ? "bg-sky-300/20 border-sky-300/60 text-sky-200" : "bg-black/60 border-white/20 text-white/70"}`}
+            className={`${className} inline-flex items-center gap-2 rounded-full border font-medium backdrop-blur-md transition-colors cursor-pointer ${ghost.on ? "bg-sky-300/20 border-sky-300/50 text-sky-100" : "bg-black/55 border-white/15 text-slate-200"}`}
         >
-            <span className="material-symbols-outlined text-lg">{ghost.on ? "visibility" : "visibility_off"}</span>
+            <span className="material-symbols-outlined text-lg" aria-hidden="true">{ghost.on ? "visibility" : "visibility_off"}</span>
             {t.ghost.label}: {ghost.on ? t.ghost.on : t.ghost.off}
         </button>
     );
@@ -75,12 +75,17 @@ function EndWorkoutButton({ t, endWorkoutData, className }: { t: Dict; endWorkou
                 router.push("/summary");
             }}
             aria-live="polite"
-            className={`${className} ${armed ? "bg-orange-500 text-black border-orange-400" : "bg-black/70 text-white border-white/25 hover:bg-black/80"}`}
+            className={`${className} ${armed ? "bg-orange-400 text-background-dark border-orange-300" : "bg-black/60 backdrop-blur-md text-white border-white/20 hover:bg-black/75"}`}
         >
-            <span className="material-symbols-outlined text-xl">{armed ? "warning" : "stop_circle"}</span>
+            <span className="material-symbols-outlined text-xl" aria-hidden="true">{armed ? "warning" : "stop_circle"}</span>
             {armed ? t.camera.confirmEnd : t.camera.endWorkout}
         </button>
     );
+}
+
+function riskText(riskLevel: RiskLevelData | null, language: string): string {
+    if (!riskLevel) return "";
+    return language === "th" ? riskLevel.label_th : riskLevel.label || riskLevel.label_th;
 }
 
 export function CameraMobileHUD({ props }: { props: CameraOverlayProps }) {
@@ -93,54 +98,55 @@ export function CameraMobileHUD({ props }: { props: CameraOverlayProps }) {
     const warn = !!issue || !isGoodForm;
     const bannerTitle = issue ? issue.title : feedbackTitle;
     const bannerDetail = issue ? issue.cue : feedbackDetail;
-
-    const mobileRiskLabel = riskLevel
-        ? (language === "th" ? riskLevel.label_th : (riskLevel.label || riskLevel.label_th))
-        : "";
+    const progress = Math.min(100, (currentReps / Math.max(1, repGoal)) * 100);
 
     return (
         <>
+            {/* Top row under the header: ghost switch (left), big rep counter (right) — readable from 2–3 m */}
             {ghost?.available && (
-                <GhostToggle t={t} ghost={ghost} className="lg:hidden absolute top-[4.5rem] left-3 z-20 h-10 px-3 text-sm" />
+                <GhostToggle t={t} ghost={ghost} className="lg:hidden absolute top-[4.75rem] left-3 z-20 h-10 px-3 text-sm" />
             )}
-
-            {/* Big rep counter — readable from 2–3 m away */}
-            <div className="lg:hidden absolute top-16 right-3 z-20 text-right leading-none pointer-events-none" aria-live="polite">
-                <span key={currentReps} className="animate-rep text-white font-black text-6xl tabular-nums drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">{currentReps}</span>
-                <span className="text-white/70 font-bold text-2xl">/{repGoal}</span>
-                <div className="text-white/80 text-sm font-semibold mt-1 drop-shadow">{setLabel ? `${t.camera.reps} · ${setLabel}` : t.camera.reps}</div>
-            </div>
-
-            {/* Form feedback banner — orange when something needs fixing */}
-            <div role="status" className={`lg:hidden absolute top-40 left-3 right-3 z-20 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-xl transition-colors ${!warn ? "bg-black/70 border border-primary/40" : "bg-orange-400 text-black"}`}>
-                <span className={`material-symbols-outlined text-3xl shrink-0 ${!warn ? "text-primary" : "text-black"}`}>{!warn ? "check_circle" : "warning"}</span>
-                <div className="min-w-0">
-                    <p className={`font-bold text-xl leading-tight ${!warn ? "text-primary" : "text-black"}`}>{bannerTitle}</p>
-                    <p className={`text-base leading-snug line-clamp-2 ${!warn ? "text-white/85" : "text-black/85"}`}>{bannerDetail}</p>
+            <div className="lg:hidden absolute top-[4.75rem] right-3 z-20 rounded-2xl bg-black/55 backdrop-blur-md border border-white/10 px-3.5 py-2 text-right" aria-live="polite">
+                <div className="leading-none">
+                    <span key={currentReps} className="animate-rep text-white font-bold text-6xl tabular-nums">{currentReps}</span>
+                    <span className="text-slate-300 font-semibold text-2xl tabular-nums">/{repGoal}</span>
                 </div>
+                <p className="mt-1 text-xs font-medium text-slate-300">{setLabel ? `${t.camera.reps} · ${setLabel}` : t.camera.reps}</p>
             </div>
-            {missionFocus && (
-                <p className="lg:hidden absolute top-[17.5rem] left-3 right-3 z-20 text-sm text-white bg-black/60 rounded-xl px-3 py-2 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary text-lg">flag</span>{missionFocus}
-                </p>
-            )}
 
-            <div className="lg:hidden relative z-20 mt-auto p-3 pb-4">
-                <div className="flex items-center justify-between mb-2 px-1 text-sm">
-                    <span className="text-white/90 font-semibold drop-shadow">
-                        {t.camera.formScore} <span className="font-black tabular-nums">{formScore}%</span>
+            {/* Bottom stack: the body stays clear in the middle of the frame */}
+            <div className="lg:hidden relative z-20 mt-auto px-3 pt-16 pb-[max(1rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-black/85 via-black/50 to-transparent flex flex-col gap-2.5">
+                {missionFocus && (
+                    <p className="self-start max-w-full text-sm text-white bg-black/55 backdrop-blur-md border border-white/10 rounded-full px-3 py-1.5 flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-primary text-lg shrink-0" aria-hidden="true">flag</span>
+                        <span className="truncate">{missionFocus}</span>
+                    </p>
+                )}
+
+                <div role="status" className={`rounded-2xl px-4 py-3 flex items-center gap-3 transition-colors ${warn ? "bg-orange-400 text-background-dark" : "bg-black/60 backdrop-blur-md border border-primary/40"}`}>
+                    <span className={`material-symbols-outlined text-3xl shrink-0 filled ${warn ? "text-background-dark" : "text-primary"}`} aria-hidden="true">{warn ? "warning" : "check_circle"}</span>
+                    <div className="min-w-0">
+                        <p className={`font-semibold text-lg leading-tight ${warn ? "" : "text-primary"}`}>{bannerTitle}</p>
+                        {bannerDetail && <p className={`mt-0.5 text-sm leading-snug line-clamp-2 ${warn ? "text-background-dark/85" : "text-slate-200"}`}>{bannerDetail}</p>}
+                    </div>
+                </div>
+
+                <div className="flex items-center justify-between px-1 text-sm">
+                    <span className="text-slate-200">
+                        {t.camera.formScore} <span className="font-semibold text-white tabular-nums">{formScore}%</span>
                     </span>
                     {riskLevel && (
-                        <span className="flex items-center gap-1 font-semibold" style={{ color: riskLevel.color }}>
-                            <span className="material-symbols-outlined text-base">health_and_safety</span>{mobileRiskLabel}
+                        <span className="flex items-center gap-1 font-medium" style={{ color: riskLevel.color }}>
+                            <span className="material-symbols-outlined text-base" aria-hidden="true">health_and_safety</span>{riskText(riskLevel, language)}
                         </span>
                     )}
                 </div>
-                <div className="w-full h-2 rounded-full bg-white/15 overflow-hidden mb-3">
-                    <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${Math.min(100, (currentReps / Math.max(1, repGoal)) * 100)}%` }}></div>
+                <div className="h-2 rounded-full bg-white/15 overflow-hidden" aria-hidden="true">
+                    <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
                 </div>
+
                 <EndWorkoutButton t={t} endWorkoutData={endWorkoutData}
-                    className="w-full h-14 rounded-2xl border font-bold text-base flex items-center justify-center gap-2 transition-colors cursor-pointer active:scale-[0.98]" />
+                    className="mt-1 w-full h-14 rounded-2xl border font-semibold text-base flex items-center justify-center gap-2 transition-colors cursor-pointer active:scale-[0.98]" />
             </div>
         </>
     );
@@ -149,120 +155,116 @@ export function CameraMobileHUD({ props }: { props: CameraOverlayProps }) {
 export function CameraDesktopPanel({ props }: { props: CameraOverlayProps }) {
     const { t, isTrackingStarted, isGoodForm, formScore, feedbackTitle, feedbackDetail, currentReps, repGoal, exerciseName, endWorkoutData, riskLevel, issue, setLabel, missionFocus, ghost } = props;
     const { language } = useLanguage();
-    
+
     if (!isTrackingStarted) return null;
 
     // Derive risk display from API data or fall back to form-based
-    const riskLabel = riskLevel 
-        ? (language === "th" ? riskLevel.label_th : (riskLevel.label || riskLevel.label_th))
-        : (isGoodForm ? t.camera.lowRisk : t.camera.highRisk);
+    const riskLabel = riskLevel ? riskText(riskLevel, language) : (isGoodForm ? t.camera.lowRisk : t.camera.highRisk);
     const riskColor = riskLevel ? riskLevel.color : (isGoodForm ? "#22c55e" : "#f97316");
     const riskIcon = riskLevel
         ? (riskLevel.level === "low" ? "verified_user" : riskLevel.level === "critical" ? "emergency" : "health_and_safety")
         : "health_and_safety";
-    
+    const progress = Math.min(100, (currentReps / Math.max(1, repGoal)) * 100);
+    const card = "rounded-2xl bg-surface-dark border border-white/10";
+
     return (
-        <aside className="hidden lg:flex flex-col w-80 xl:w-96 bg-[#0a0a0a] border-l border-white/5 p-5 xl:p-6 gap-5 overflow-y-auto">
-            <div className="flex items-center gap-3 bg-white/5 rounded-2xl p-4 border border-white/5">
-                <span className="material-symbols-outlined text-primary text-3xl">fitness_center</span>
-                <div>
-                    <h3 className="text-white font-bold text-lg leading-tight">{exerciseName}</h3>
-                    <p className="text-white/60 text-xs">{setLabel || t.camera.aiPowered}</p>
-                </div>
-            </div>
-
-            <div className={`rounded-2xl p-5 border text-center ${isGoodForm ? "bg-primary/10 border-primary/20" : "bg-orange-500/10 border-orange-500/30"}`}>
-                <span className={`text-xs uppercase tracking-[0.2em] font-bold ${isGoodForm ? "text-primary/60" : "text-orange-300"}`}>{t.camera.formScore}</span>
-                <div className={`text-6xl font-black leading-none mt-1 ${isGoodForm ? "text-primary" : "text-orange-400"}`}>{formScore}<span className="text-xl">%</span></div>
-            </div>
-
-            <div className={`flex items-start gap-3 rounded-2xl p-4 border ${isGoodForm ? "bg-primary/5 border-primary/20" : "bg-orange-500/10 border-orange-500/30"}`}>
-                <span className={`material-symbols-outlined text-2xl shrink-0 mt-0.5 ${isGoodForm ? "text-primary" : "text-orange-400"}`}>{isGoodForm ? "check_circle" : "warning"}</span>
+        <aside className="hidden lg:flex flex-col w-80 xl:w-96 bg-surface-darker border-l border-white/10 p-5 xl:p-6 gap-4 overflow-y-auto">
+            <div className={`${card} flex items-center gap-3 p-4`}>
+                <span className="size-11 rounded-xl bg-primary/15 text-primary flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-2xl" aria-hidden="true">fitness_center</span>
+                </span>
                 <div className="min-w-0">
-                    <p className={`font-bold text-sm ${isGoodForm ? "text-primary" : "text-orange-300"}`}>{feedbackTitle}</p>
-                    <p className={`text-xs mt-1 leading-relaxed ${isGoodForm ? "text-white/50" : "text-orange-100/80"}`}>{feedbackDetail}</p>
+                    <h3 className="text-white font-semibold text-lg leading-tight truncate">{exerciseName}</h3>
+                    <p className="text-slate-400 text-sm">{setLabel || t.camera.aiPowered}</p>
                 </div>
+            </div>
+
+            {/* Reps — the number people look for first */}
+            <div className={`${card} p-5`}>
+                <p className="text-sm text-slate-400">{t.camera.repCount}</p>
+                <div className="mt-1 leading-none" aria-live="polite">
+                    <span key={currentReps} className="animate-rep text-6xl font-bold text-white tabular-nums">{currentReps}</span>
+                    <span className="text-2xl font-semibold text-slate-500 tabular-nums">/{repGoal}</span>
+                </div>
+                <div className="mt-4 h-2.5 rounded-full bg-white/10 overflow-hidden" aria-hidden="true">
+                    <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
+                </div>
+            </div>
+
+            <div className={`rounded-2xl p-4 border flex items-start gap-3 ${isGoodForm ? "bg-primary/[0.06] border-primary/25" : "bg-orange-500/10 border-orange-400/30"}`}>
+                <div className="min-w-0 flex-1">
+                    <p className="text-sm text-slate-400">{t.camera.formScore}</p>
+                    <p className={`text-4xl font-bold leading-tight tabular-nums ${isGoodForm ? "text-primary" : "text-orange-300"}`}>{formScore}<span className="text-lg">%</span></p>
+                    <p className={`mt-2 font-semibold text-sm ${isGoodForm ? "text-primary" : "text-orange-300"}`}>{feedbackTitle}</p>
+                    {feedbackDetail && <p className="text-sm mt-0.5 leading-relaxed text-slate-300">{feedbackDetail}</p>}
+                </div>
+                <span className={`material-symbols-outlined text-3xl shrink-0 filled ${isGoodForm ? "text-primary" : "text-orange-300"}`} aria-hidden="true">{isGoodForm ? "check_circle" : "warning"}</span>
             </div>
 
             {issue && (
-                <div role="status" className="rounded-2xl p-4 bg-orange-400 text-black">
+                <div role="status" className="rounded-2xl p-4 bg-orange-400 text-background-dark">
                     <p className="text-xs font-semibold opacity-80">{t.body.whereTitle}</p>
-                    <p className="font-bold text-lg leading-tight mt-0.5">{issue.title}</p>
+                    <p className="font-semibold text-lg leading-tight mt-0.5">{issue.title}</p>
                     <p className="text-sm mt-1">{issue.cue}</p>
                 </div>
             )}
             {missionFocus && (
-                <p className="text-sm text-white bg-white/5 border border-white/10 rounded-2xl px-4 py-3 flex items-start gap-2">
-                    <span className="material-symbols-outlined text-primary text-lg">flag</span>{missionFocus}
+                <p className={`${card} text-sm text-slate-100 px-4 py-3 flex items-start gap-2`}>
+                    <span className="material-symbols-outlined text-primary text-lg shrink-0" aria-hidden="true">flag</span>{missionFocus}
                 </p>
             )}
 
             {ghost && (
-                <div className="rounded-2xl p-4 border border-white/10 bg-white/5 flex flex-col gap-2">
+                <div className={`${card} p-4 flex flex-col gap-2`}>
                     {ghost.available ? (
                         <>
                             <GhostToggle t={t} ghost={ghost} className="self-start h-10 px-3 text-sm" />
-                            {ghost.on && <p className="text-xs text-white/60">{t.ghost.legend}</p>}
+                            {ghost.on && <p className="text-xs text-slate-400">{t.ghost.legend}</p>}
                         </>
                     ) : (
-                        <p className="text-xs text-white/60 flex items-start gap-2">
-                            <span className="material-symbols-outlined text-sky-300 text-lg">accessibility_new</span>{t.ghost.none}
+                        <p className="text-sm text-slate-400 flex items-start gap-2">
+                            <span className="material-symbols-outlined text-sky-300 text-lg shrink-0" aria-hidden="true">accessibility_new</span>{t.ghost.none}
                         </p>
                     )}
                 </div>
             )}
 
-            {/* ── Injury Risk Assessment Card ── */}
-            <div className="rounded-2xl p-4 border border-white/10 bg-white/5">
+            {/* ── Injury Risk Assessment ── */}
+            <div className={`${card} p-4`}>
                 <div className="flex items-center gap-2 mb-3">
-                    <span className="material-symbols-outlined text-xl" style={{ color: riskColor }}>{riskIcon}</span>
+                    <span className="material-symbols-outlined text-xl" style={{ color: riskColor }} aria-hidden="true">{riskIcon}</span>
                     <div>
-                        <p className="font-bold text-sm" style={{ color: riskColor }}>{riskLabel}</p>
-                        <p className="text-white/30 text-xs">{t.camera.injuryRisk}</p>
+                        <p className="font-semibold text-sm" style={{ color: riskColor }}>{riskLabel}</p>
+                        <p className="text-slate-400 text-xs">{t.camera.injuryRisk}</p>
                     </div>
                     {riskLevel && (
                         <div className="ml-auto text-right">
-                            <span className="text-lg font-black" style={{ color: riskColor }}>{riskLevel.score}</span>
-                            <span className="text-white/30 text-xs ml-0.5">/100</span>
+                            <span className="text-lg font-bold tabular-nums" style={{ color: riskColor }}>{riskLevel.score}</span>
+                            <span className="text-slate-500 text-xs ml-0.5">/100</span>
                         </div>
                     )}
                 </div>
-                {/* Risk score bar */}
-                <div className="w-full bg-white/5 rounded-full h-2 mb-2 border border-white/10 overflow-hidden">
-                    <div className="h-full transition-all duration-500 rounded-full" style={{ 
+                <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden" aria-hidden="true">
+                    <div className="h-full transition-all duration-500 rounded-full" style={{
                         width: `${riskLevel ? riskLevel.score : (isGoodForm ? 10 : 60)}%`,
-                        backgroundColor: riskColor
-                    }}></div>
+                        backgroundColor: riskColor,
+                    }} />
                 </div>
-                {/* Risk factors list */}
                 {riskLevel && riskLevel.factors.length > 0 && (
-                    <div className="mt-2 space-y-1">
+                    <ul className="mt-3 space-y-1">
                         {riskLevel.factors.slice(0, 3).map((factor, i) => (
-                            <p key={i} className="text-xs text-white/40 flex items-start gap-1">
-                                <span className="text-white/20 mt-px">•</span>
+                            <li key={i} className="text-xs text-slate-400 flex items-start gap-1.5">
+                                <span className="text-slate-500" aria-hidden="true">•</span>
                                 <span>{factor}</span>
-                            </p>
+                            </li>
                         ))}
-                    </div>
+                    </ul>
                 )}
             </div>
 
-            <div className="mt-auto pt-5">
-                <div className="flex justify-between items-end mb-2">
-                    <div>
-                        <span className="text-white/40 text-xs uppercase tracking-wider font-bold block">{t.camera.repCount}</span>
-                        <div className="text-4xl font-black text-white mt-1">
-                            <span key={currentReps} className="animate-rep text-white">{currentReps}</span>
-                            <span className="text-white/20 text-2xl">/{repGoal}</span>
-                        </div>
-                    </div>
-                </div>
-                <div className="w-full bg-white/5 rounded-full h-3 mb-6 border border-white/10 overflow-hidden">
-                    <div className="bg-primary h-full transition-all duration-300 rounded-full" style={{ width: `${Math.min(100, (currentReps / repGoal) * 100)}%` }}></div>
-                </div>
-
+            <div className="mt-auto pt-2">
                 <EndWorkoutButton t={t} endWorkoutData={endWorkoutData}
-                    className="w-full h-14 rounded-xl border font-bold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer active:scale-[0.98]" />
+                    className="w-full h-14 rounded-2xl border font-semibold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer active:scale-[0.98]" />
             </div>
         </aside>
     );
