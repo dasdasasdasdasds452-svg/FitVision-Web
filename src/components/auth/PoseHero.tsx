@@ -6,7 +6,8 @@ import { useLanguage } from "@/context/LanguageContext";
 /*
  * Sign-in hero: a side-view bodyweight squat drawn the way the camera page tracks it —
  * MediaPipe-style joints, the far limbs dimmed, and a live knee angle + rep count that
- * follow the motion. Static (bottom of the squat) when the OS asks for reduced motion.
+ * follow the motion. Starts paused (bottom of the squat) when the OS asks for reduced motion;
+ * the play/pause button lets anyone start or stop it.
  */
 
 type P = [number, number];
@@ -87,35 +88,56 @@ function jointArc(a: P, b: P, c: P, r: number): string {
 
 const line = (pts: P[]) => pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join("");
 
-function useSquatPhase(): { depth: number; rep: number } {
-    // Server render and reduced motion: the bottom of rep 3.
-    const [state, setState] = React.useState({ depth: 1, rep: 3 });
+const REDUCED_QUERY = "(prefers-reduced-motion: reduce)";
+function subscribeReduced(onChange: () => void) {
+    const mq = window.matchMedia(REDUCED_QUERY);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+}
+/** The OS "reduce motion" setting (Windows: Animation effects off). Server: assume reduced. */
+function usePrefersReducedMotion(): boolean {
+    return React.useSyncExternalStore(subscribeReduced, () => window.matchMedia(REDUCED_QUERY).matches, () => true);
+}
+
+const SCAN_MS = 3200;
+
+/** Squat cycle driven by requestAnimationFrame. Keeps its place when paused and resumed. */
+function useSquatPhase(playing: boolean): { depth: number; rep: number; scan: number } {
+    // Server render / paused start: the bottom of rep 3.
+    const [state, setState] = React.useState({ depth: 1, rep: 3, scan: 0.4 });
+    const elapsedRef = React.useRef(PERIOD_MS * 0.575); // begin at the bottom, like the static frame
     React.useEffect(() => {
-        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+        if (!playing) return;
         let raf = 0;
-        let last = 0;
-        const start = performance.now() - PERIOD_MS / 2; // begin at the bottom, like the static frame
+        let prev = performance.now();
+        let lastPaint = 0;
         const tick = (now: number) => {
             raf = requestAnimationFrame(tick);
-            if (now - last < 33) return; // ~30 fps is plenty for this
-            last = now;
-            const elapsed = now - start;
+            elapsedRef.current += Math.min(now - prev, 100); // don't jump after a background tab
+            prev = now;
+            if (now - lastPaint < 33) return; // ~30 fps is plenty for this
+            lastPaint = now;
+            const elapsed = elapsedRef.current;
             const cycle = (elapsed % PERIOD_MS) / PERIOD_MS;
             // Ease in and out of the bottom, with a short pause at the top.
             const depth = cycle < 0.15 ? 0 : (1 - Math.cos(((cycle - 0.15) / 0.85) * 2 * Math.PI)) / 2;
             // A rep counts at the bottom of each cycle (cycle ≈ 0.575), like the camera's rep counter.
-            const reps = Math.floor(elapsed / PERIOD_MS - 0.575) + 4;
-            setState({ depth, rep: ((reps - 1) % MAX_REPS) + 1 });
+            const reps = Math.floor(elapsed / PERIOD_MS - 0.575) + 3;
+            setState({ depth, rep: ((reps - 1) % MAX_REPS) + 1, scan: (elapsed % SCAN_MS) / SCAN_MS });
         };
         raf = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(raf);
-    }, []);
+    }, [playing]);
     return state;
 }
 
 export default function PoseHero({ className = "" }: { className?: string }) {
     const { t } = useLanguage();
-    const { depth, rep } = useSquatPhase();
+    const reducedMotion = usePrefersReducedMotion();
+    // Plays by itself unless the OS asks for reduced motion; the button overrides either way.
+    const [userChoice, setUserChoice] = React.useState<boolean | null>(null);
+    const playing = userChoice ?? !reducedMotion;
+    const { depth, rep, scan } = useSquatPhase(playing);
     const near = mixPose(depth);
     const far = Object.fromEntries(Object.entries(near).map(([k, p]) => [k, shift(p, FAR_OFFSET)])) as unknown as Pose;
     const knee = Math.round(angleAt(near.hip, near.knee, near.ankle));
@@ -154,7 +176,7 @@ export default function PoseHero({ className = "" }: { className?: string }) {
                 <rect width="342" height="196" fill="url(#ph-glow)" />
 
                 {/* Scan band sweeping down the frame */}
-                <rect className="pose-scan" x="0" y="-40" width="342" height="40" fill="url(#ph-scan)" />
+                <rect x="0" y={(scan * 236 - 40).toFixed(1)} width="342" height="40" fill="url(#ph-scan)" />
 
                 {/* Tracking box around the athlete */}
                 <g stroke="#39FF14" strokeWidth="1.6" strokeLinecap="round" fill="none" opacity="0.7">
@@ -204,7 +226,7 @@ export default function PoseHero({ className = "" }: { className?: string }) {
             {/* Overlays (decorative copies of what the SVG shows) */}
             <figcaption className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full border border-white/15 bg-black/60 backdrop-blur px-2.5 py-1 text-xs text-slate-100">
                 <span className="relative flex size-2" aria-hidden="true">
-                    <span className="absolute inline-flex size-full rounded-full bg-primary opacity-60 animate-ping" />
+                    {playing && <span className="absolute inline-flex size-full rounded-full bg-primary opacity-60 animate-ping" />}
                     <span className="relative inline-flex size-2 rounded-full bg-primary" />
                 </span>
                 {t.login.liveBadge}
@@ -217,6 +239,15 @@ export default function PoseHero({ className = "" }: { className?: string }) {
                 <span className="material-symbols-outlined text-sm">check_circle</span>
                 {t.login.formGood}
             </div>
+            <button
+                type="button"
+                onClick={() => setUserChoice(!playing)}
+                aria-label={playing ? t.login.pauseDemo : t.login.playDemo}
+                aria-pressed={!playing}
+                className="absolute right-2 bottom-2 size-9 rounded-full border border-white/15 bg-black/60 backdrop-blur text-white flex items-center justify-center hover:bg-black/80 cursor-pointer focus-visible:outline-2 focus-visible:outline-primary"
+            >
+                <span className="material-symbols-outlined text-xl filled" aria-hidden="true">{playing ? "pause" : "play_arrow"}</span>
+            </button>
         </figure>
     );
 }

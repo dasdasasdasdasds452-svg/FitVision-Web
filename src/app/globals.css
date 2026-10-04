@@ -323,15 +323,6 @@
     font-variation-settings: 'FILL' 1;
 }
 
-/* Scan band on the sign-in pose preview (components/auth/PoseHero.tsx) */
-@keyframes pose-scan {
-    0% { transform: translateY(0); }
-    100% { transform: translateY(236px); }
-}
-.pose-scan {
-    animation: pose-scan 3.2s linear infinite;
-}
-
 /* Respect users who turn off motion in their OS settings */
 @media (prefers-reduced-motion: reduce) {
     *,
