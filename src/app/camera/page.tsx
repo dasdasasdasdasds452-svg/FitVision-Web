@@ -23,6 +23,9 @@ import { pushSession } from "@/lib/cloudSync";
 import { publishMyStats } from "@/lib/friends";
 import { GhostRep, RepRecorder, drawGhost, isBetterGhost, loadGhost, saveGhost } from "@/lib/ghostRep";
 import type { SetResult } from "@/lib/workoutStore";
+import { loadSeenGuides, markGuideSeen } from "@/lib/exerciseGuides";
+import { ExerciseGuideModal } from "@/components/guide/ExerciseGuide";
+import { useHydrated } from "@/lib/useHydrated";
 import type { MediaPipePose, MediaPipeWindow, PoseResults } from "@/types/mediapipe";
 
 type Facing = "user" | "environment";
@@ -103,6 +106,18 @@ function CameraContent() {
     const isTrackingStartedRef = useRef(false);
 
     const [countdown, setCountdown] = useState<number | null>(null);
+
+    // How-to guide: opens by itself the first time this account trains a lift, and from the setup sheet any time.
+    const hydrated = useHydrated();
+    const [seenGuides, setSeenGuides] = useState<ExerciseId[] | null>(null);
+    const [guideRequested, setGuideRequested] = useState(false);
+    const guideSeen = (seenGuides ?? (hydrated ? loadSeenGuides() : [currentExercise])).includes(currentExercise);
+    const guideOpen = guideRequested || (!guideSeen && !isTrackingStarted && countdown === null);
+    const closeGuide = () => {
+        setGuideRequested(false);
+        setSeenGuides(markGuideSeen(currentExercise));
+    };
+
     const [currentReps, setCurrentReps] = useState(0);
     const [currentSet, setCurrentSet] = useState(1);
     const currentSetRef = useRef(1);
@@ -1177,6 +1192,12 @@ function CameraContent() {
                                                         {setup.howToPlace}
                                                     </Link>
                                                 </div>
+                                                <button type="button" onClick={() => setGuideRequested(true)}
+                                                    className="-mt-2 min-h-11 flex items-center gap-3 rounded-2xl bg-white/[0.04] border border-white/10 px-3 text-left text-sm text-slate-100 hover:border-white/25 cursor-pointer touch-manipulation">
+                                                    <span className="material-symbols-outlined text-xl text-primary filled" aria-hidden="true">play_circle</span>
+                                                    <span className="flex-1">{t.guide.open.replace("{exercise}", exerciseName)}</span>
+                                                    <span className="material-symbols-outlined text-lg text-slate-400" aria-hidden="true">chevron_right</span>
+                                                </button>
 
                                                 {/* System readiness */}
                                                 <div>
@@ -1346,6 +1367,7 @@ function CameraContent() {
                     ghost: { available: hasGhost, on: showGhost, toggle: toggleGhost },
                 }} />
             </div>
+            <ExerciseGuideModal exercise={currentExercise} open={guideOpen} onClose={closeGuide} primaryLabel={t.guide.startSet} />
         </div>
     );
 }

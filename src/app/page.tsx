@@ -23,6 +23,8 @@ import {
 import { DayPart, currentStreak, dayPart, lastWeekRecap, loadWeeklyGoal, saveWeeklyGoal, weekProgress } from "@/lib/progress";
 import { describeIssue, parseIssueKey } from "@/lib/formAnalyzer";
 import { Mission, MissionState, loadMissions, missionProgress, refreshMissions, saveMissions, skipActiveMission } from "@/lib/missions";
+import { markGuideSeen } from "@/lib/exerciseGuides";
+import { ExerciseGuideModal } from "@/components/guide/ExerciseGuide";
 
 const REP_PRESETS = [5, 8, 10, 12];
 const REST_PRESETS = [60, 90, 120, 180];
@@ -99,6 +101,11 @@ function HomeView({ boot }: { boot: HomeBoot | null }) {
     const [missions, setMissions] = useState<MissionState>(boot?.missions ?? EMPTY_MISSIONS);
     const part: DayPart | null = boot?.part ?? null;
     const [onboardDismissed, setOnboardDismissed] = useState(boot?.onboardDismissed ?? true);
+    const [guideOpen, setGuideOpen] = useState(false);
+    const closeGuide = () => {
+        setGuideOpen(false);
+        markGuideSeen(exercise); // the camera won't show it again for this lift
+    };
 
     // Persist the refreshed fix-it mission (a new one may have started from the latest history).
     useEffect(() => {
@@ -237,6 +244,14 @@ function HomeView({ boot }: { boot: HomeBoot | null }) {
                                     );
                                 })}
                             </div>
+                            <button
+                                type="button"
+                                onClick={() => setGuideOpen(true)}
+                                className="self-start min-h-11 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline underline-offset-4 cursor-pointer"
+                            >
+                                <span className="material-symbols-outlined text-lg" aria-hidden="true">play_circle</span>
+                                {t.guide.open.replace("{exercise}", exerciseLabel(exercise))}
+                            </button>
                         </fieldset>
 
                         <div className="flex flex-col gap-3">
@@ -547,6 +562,7 @@ function HomeView({ boot }: { boot: HomeBoot | null }) {
                     )}
                 </section>
             </div>
+            <ExerciseGuideModal exercise={exercise} open={guideOpen} onClose={closeGuide} />
         </DashboardLayout>
     );
 }

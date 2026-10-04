@@ -345,6 +345,76 @@ export const en = {
             cancel: "Cancel"
         }
     },
+    guide: {
+        open: "How to {exercise}",
+        title: "How to {exercise}",
+        sectionTitle: "Learn the movement",
+        sectionSubtitle: "Compare the correct form with the most common mistakes before you open the camera.",
+        correct: "Correct form",
+        mistakesLabel: "Correct form and common mistakes",
+        play: "Play",
+        pause: "Pause",
+        scrub: "Drag to step through the rep",
+        demoTab: "Animation",
+        clipTab: "Real clip",
+        clipNote: "Clip from the dataset the AI was trained on",
+        demoAlt: "{exercise} animation: {variant}",
+        stepsTitle: "Step by step",
+        fixTitle: "How to fix it",
+        close: "Close",
+        done: "Got it",
+        startSet: "Got it, set up the camera",
+        exercises: {
+            squat: {
+                summary: "Sit your hips back as if onto a chair until your thighs are parallel to the floor, then push the floor away.",
+                steps: [
+                    "Stand with feet about shoulder-width, toes turned out slightly",
+                    "Breathe in, brace your core and push your hips back",
+                    "Lower until your thighs are parallel, knees tracking over your toes",
+                    "Drive through your whole foot and straighten hips and knees together"
+                ],
+                cueTop: "Stand tall, core braced",
+                cueBottom: "Thighs parallel, heels down",
+                note: "Knees caving in and uneven weight show when you face the camera. The AI warns you about them during your set.",
+                mistakes: {
+                    shallow: { title: "Not deep enough", fix: "Lower until your hips reach knee height. If you can't, use less weight first." },
+                    lean: { title: "Leaning forward, rounded back", fix: "Chest up, eyes forward, keep your core braced the whole rep." }
+                }
+            },
+            deadlift: {
+                summary: "Hinge at the hips with a flat back and lift the bar close to your legs until you stand tall.",
+                steps: [
+                    "Stand with the bar over mid-foot, feet hip-width apart",
+                    "Hinge down and grip the bar just outside your legs",
+                    "Chest up, back flat, pull your shoulders down before you lift",
+                    "Push the floor away, keep the bar against your legs, stand tall and stop without leaning back"
+                ],
+                cueTop: "Stand tall, hips locked, no lean back",
+                cueBottom: "Flat back, bar over mid-foot",
+                note: "",
+                mistakes: {
+                    rounded: { title: "Rounded back", fix: "Lift your chest, pull your shoulders down and brace before you pull. If your back still rounds, use less weight." },
+                    overext: { title: "Leaning back at the top", fix: "Stand tall and stop. Squeeze your glutes instead of leaning back." }
+                }
+            },
+            benchpress: {
+                summary: "Lower the bar to your chest under control, then press it up in a straight line.",
+                steps: [
+                    "Lie with your eyes under the bar, feet flat on the floor",
+                    "Grip slightly wider than your shoulders and pull your shoulder blades together",
+                    "Lower the bar to your lower chest, elbows about 45° from your body",
+                    "Press until your arms are straight, keeping your hips on the bench"
+                ],
+                cueTop: "Arms straight, bar over shoulders",
+                cueBottom: "Bar on chest, wrists over elbows",
+                note: "",
+                mistakes: {
+                    hips: { title: "Hips lift off the bench", fix: "Plant your feet and drive through them, but keep your hips on the bench." },
+                    wrist: { title: "Wrists not over elbows", fix: "Keep your forearms vertical at the bottom. Adjust your grip width if needed." }
+                }
+            }
+        }
+    },
     tutorial: {
         page: {
             title: "Set up your camera",

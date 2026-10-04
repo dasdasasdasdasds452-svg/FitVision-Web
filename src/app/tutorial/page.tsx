@@ -1,8 +1,10 @@
 "use client";
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import DashboardLayout from "@/components/DashboardLayout";
+import { ExerciseGuide } from "@/components/guide/ExerciseGuide";
 import { useLanguage } from "@/context/LanguageContext";
+import type { ExerciseId } from "@/lib/workoutStore";
 
 const FIGURE = "#E2E8F0";
 
@@ -111,13 +113,14 @@ function SetupDiagram({ correct, label, screenLabel, mapLabel }: { correct: bool
 export default function TutorialPage() {
     const { t } = useLanguage();
     const tt = t.tutorial;
+    const [guideExercise, setGuideExercise] = useState<ExerciseId>("squat");
 
     const steps = [
         { icon: "straighten", ...tt.steps.distance },
         { icon: "360", ...tt.steps.angle },
         { icon: "wb_sunny", ...tt.steps.lighting },
     ];
-    const exercises = [
+    const exercises: { key: ExerciseId; name: string; points: string[] }[] = [
         { key: "squat", name: t.camera.exerciseName.squat, points: tt.capabilities.squat.points },
         { key: "deadlift", name: t.camera.exerciseName.deadlift, points: tt.capabilities.deadlift.points },
         { key: "benchpress", name: t.camera.exerciseName.benchpress, points: tt.capabilities.benchpress.points },
@@ -179,6 +182,32 @@ export default function TutorialPage() {
                                 </ul>
                             </figcaption>
                         </figure>
+                    </div>
+                </section>
+
+                {/* ── How to do each lift ── */}
+                <section id="technique" aria-labelledby="technique-h" className="scroll-mt-20">
+                    <h2 id="technique-h" className="text-lg font-semibold text-white">{t.guide.sectionTitle}</h2>
+                    <p className="text-slate-300 mt-1 mb-4">{t.guide.sectionSubtitle}</p>
+                    <div className="rounded-3xl bg-surface-dark border border-white/10 p-4 md:p-6 flex flex-col gap-5">
+                        <div role="tablist" aria-label={t.guide.sectionTitle} className="grid grid-cols-3 gap-2">
+                            {exercises.map((ex) => (
+                                <button
+                                    key={ex.key}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={guideExercise === ex.key}
+                                    onClick={() => setGuideExercise(ex.key)}
+                                    className={`min-h-11 px-2 rounded-xl border-2 text-sm md:text-base font-semibold cursor-pointer transition-colors ${guideExercise === ex.key
+                                        ? "border-primary bg-primary/10 text-white"
+                                        : "border-white/10 bg-white/[0.03] text-slate-300 hover:border-white/25"
+                                        }`}
+                                >
+                                    {ex.name}
+                                </button>
+                            ))}
+                        </div>
+                        <ExerciseGuide key={guideExercise} exercise={guideExercise} />
                     </div>
                 </section>
 

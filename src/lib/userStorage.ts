@@ -14,6 +14,7 @@ export const USER_SCOPED_KEYS = [
     "fitvision_weekly_goal",
     "fitvision_missions",
     "fitvision_ghost_reps",
+    "fitvision_guide_seen",
 ] as const;
 export type UserScopedKey = (typeof USER_SCOPED_KEYS)[number];
 
